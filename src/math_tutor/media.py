@@ -113,7 +113,6 @@ class MediaAssembler:
             "copy",
             "-c:a",
             "aac",
-            "-shortest",
             str(narrated_video),
         ]
         self._execute(mux_command, "video muxing failed")

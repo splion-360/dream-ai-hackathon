@@ -9,6 +9,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from math_tutor.domain import LessonJob, LessonStatus, utc_now
+from math_tutor.narration import NarrationStatus
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,10 @@ class RenderOutcome:
     renderer: str
     elapsed_seconds: float
     logs: str
+    silent_video_path: Path | None = None
+    captions_path: Path | None = None
+    narration_status: NarrationStatus = NarrationStatus.NOT_REQUESTED
+    narration_diagnostics: Mapping[str, object] | None = None
 
 
 class JobExecutionError(RuntimeError):
@@ -55,12 +60,17 @@ class JobStore:
         self._jobs: dict[str, LessonJob] = {}
         self._lock = Lock()
 
-    def create(self, lesson: str) -> LessonJob:
+    def create(self, lesson: str, *, narration_requested: bool = False) -> LessonJob:
         job = LessonJob(
             id=uuid4().hex,
             lesson=lesson,
             status=LessonStatus.QUEUED,
             created_at=utc_now(),
+            narration_status=(
+                NarrationStatus.PENDING
+                if narration_requested
+                else NarrationStatus.NOT_REQUESTED
+            ),
         )
         with self._lock:
             self._jobs[job.id] = job
@@ -91,10 +101,16 @@ class JobStore:
                 status=LessonStatus.READY,
                 completed_at=utc_now(),
                 video_path=str(outcome.video_path),
+                silent_video_path=str(outcome.silent_video_path or outcome.video_path),
+                captions_path=(
+                    str(outcome.captions_path) if outcome.captions_path is not None else None
+                ),
+                narration_status=outcome.narration_status,
                 diagnostics={
                     "renderer": outcome.renderer,
                     "elapsed_seconds": outcome.elapsed_seconds,
                     "logs": outcome.logs,
+                    **dict(outcome.narration_diagnostics or {}),
                 },
             ),
         )
@@ -149,6 +165,7 @@ class LessonService:
         store: JobStore | None = None,
         executor: ThreadPoolExecutor | None = None,
         max_pending_jobs: int = 8,
+        narration_requested: bool = False,
     ) -> None:
         if max_pending_jobs <= 0:
             raise ValueError("max_pending_jobs must be positive")
@@ -159,11 +176,15 @@ class LessonService:
             thread_name_prefix="lesson-render",
         )
         self._capacity = BoundedSemaphore(max_pending_jobs)
+        self._narration_requested = narration_requested
 
     def submit(self, lesson: str) -> LessonJob:
         if not self._capacity.acquire(blocking=False):
             raise RenderQueueFullError("render queue is full")
-        job = self._store.create(lesson)
+        job = self._store.create(
+            lesson,
+            narration_requested=self._narration_requested,
+        )
         try:
             self._executor.submit(self._run, job.id)
         except RuntimeError:

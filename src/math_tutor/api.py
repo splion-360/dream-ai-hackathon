@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from math_tutor.domain import LessonJob, LessonStatus
 from math_tutor.jobs import JobNotFoundError, LessonService, RenderQueueFullError
+from math_tutor.narration import NarrationStatus
 
 
 class CreateLessonRequest(BaseModel):
@@ -27,12 +28,21 @@ class LessonResponse(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     video_url: str | None
+    silent_video_url: str | None
+    captions_url: str | None
+    narration_status: NarrationStatus
+    explanation: str | None
+    generated_code: str | None
     diagnostics: dict[str, object]
     error: str | None
 
 
 def to_response(job: LessonJob) -> LessonResponse:
     video_url = f"/lessons/{job.id}/video" if job.video_path else None
+    silent_video_url = (
+        f"/lessons/{job.id}/video/silent" if job.silent_video_path else None
+    )
+    captions_url = f"/lessons/{job.id}/captions" if job.captions_path else None
     return LessonResponse(
         id=job.id,
         lesson=job.lesson,
@@ -41,6 +51,11 @@ def to_response(job: LessonJob) -> LessonResponse:
         started_at=job.started_at,
         completed_at=job.completed_at,
         video_url=video_url,
+        silent_video_url=silent_video_url,
+        captions_url=captions_url,
+        narration_status=job.narration_status,
+        explanation=job.explanation,
+        generated_code=job.generated_code,
         diagnostics=dict(job.diagnostics),
         error=job.error,
     )
@@ -89,4 +104,34 @@ def create_app(service: LessonService) -> FastAPI:
             raise HTTPException(status_code=410, detail="lesson video is unavailable")
         return FileResponse(video_path, media_type="video/mp4", filename="lesson.mp4")
 
+    @app.get("/lessons/{job_id}/video/silent", response_class=FileResponse)
+    def get_silent_video(job_id: str) -> FileResponse:
+        job = _ready_job(service, job_id)
+        if job.silent_video_path is None:
+            raise HTTPException(status_code=409, detail="silent lesson video is not ready")
+        video_path = Path(job.silent_video_path)
+        if not video_path.is_file():
+            raise HTTPException(status_code=410, detail="silent lesson video is unavailable")
+        return FileResponse(video_path, media_type="video/mp4", filename="lesson-silent.mp4")
+
+    @app.get("/lessons/{job_id}/captions", response_class=FileResponse)
+    def get_captions(job_id: str) -> FileResponse:
+        job = _ready_job(service, job_id)
+        if job.captions_path is None:
+            raise HTTPException(status_code=409, detail="lesson captions are not ready")
+        captions_path = Path(job.captions_path)
+        if not captions_path.is_file():
+            raise HTTPException(status_code=410, detail="lesson captions are unavailable")
+        return FileResponse(captions_path, media_type="text/vtt", filename="lesson.vtt")
+
     return app
+
+
+def _ready_job(service: LessonService, job_id: str) -> LessonJob:
+    try:
+        job = service.get(job_id)
+    except JobNotFoundError as error:
+        raise HTTPException(status_code=404, detail="lesson job not found") from error
+    if job.status is not LessonStatus.READY:
+        raise HTTPException(status_code=409, detail="lesson is not ready")
+    return job

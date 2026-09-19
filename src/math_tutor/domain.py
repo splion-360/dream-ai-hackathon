@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from types import MappingProxyType
 
+from math_tutor.narration import NarrationStatus
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -28,5 +30,10 @@ class LessonJob:
     started_at: datetime | None = None
     completed_at: datetime | None = None
     video_path: str | None = None
+    silent_video_path: str | None = None
+    captions_path: str | None = None
+    narration_status: NarrationStatus = NarrationStatus.NOT_REQUESTED
+    explanation: str | None = None
+    generated_code: str | None = None
     diagnostics: Mapping[str, object] = MappingProxyType({})
     error: str | None = None
