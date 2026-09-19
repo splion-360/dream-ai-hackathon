@@ -17,6 +17,10 @@ docker pull manimcommunity/manim@sha256:ab5ad56cf685d89da96e5d459e0cde3743fbdf21
 
 The image must be pinned by digest so development, evaluation, and demo renders use the same Manim environment. Startup rejects mutable image tags.
 
+## Secrets
+
+Copy `.env.example` to `.env` and populate credentials as integrations are enabled. Environment files are reserved for secrets such as Nebius and ElevenLabs API keys; ordinary application configuration remains version-controlled in code.
+
 ## Run the API
 
 ```bash
