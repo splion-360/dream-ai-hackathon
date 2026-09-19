@@ -5,7 +5,7 @@ import os
 import re
 import shutil
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -14,11 +14,13 @@ from typing import Any
 
 from math_tutor.jobs import JobExecutionError, RenderOutcome, is_safe_job_id
 
-CommandRunner = Callable[[list[str], float], subprocess.CompletedProcess[str]]
+CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
 DEFAULT_MANIM_IMAGE = (
     "manimcommunity/manim@sha256:ab5ad56cf685d89da96e5d459e0cde3743fbdf2141be4dcff6c26566b5ca3191"
 )
+VOICEOVER_MANIM_IMAGE = "dream-ai-manim-voiceover:local"
 _DIGEST_PINNED_IMAGE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
+_ENVIRONMENT_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _LOG_LIMIT = 32_000
 
 
@@ -34,13 +36,18 @@ class RenderFailed(RenderError):
     pass
 
 
-def run_command(command: list[str], timeout_seconds: float) -> subprocess.CompletedProcess[str]:
+def run_command(
+    command: list[str],
+    timeout_seconds: float,
+    environment: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
         check=False,
         capture_output=True,
         text=True,
         timeout=timeout_seconds,
+        env=dict(environment) if environment is not None else None,
     )
 
 
@@ -52,17 +59,26 @@ class DockerManimRenderer:
         image: str = DEFAULT_MANIM_IMAGE,
         timeout_seconds: float = 90,
         command_runner: CommandRunner = run_command,
+        network: str = "none",
+        environment: Mapping[str, str] | None = None,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
-        if not _DIGEST_PINNED_IMAGE.fullmatch(image):
+        if not (_DIGEST_PINNED_IMAGE.fullmatch(image) or image == VOICEOVER_MANIM_IMAGE):
             raise ValueError("Manim image must be digest-pinned")
+        if network not in {"none", "bridge"}:
+            raise ValueError("renderer network must be 'none' or 'bridge'")
+        resolved_environment = dict(environment or {})
+        if any(not _ENVIRONMENT_NAME.fullmatch(name) for name in resolved_environment):
+            raise ValueError("renderer environment contains an invalid variable name")
         self._artifact_root = artifact_root.resolve()
         self._scene_path = scene_path.resolve()
         self._validation_script = Path(__file__).parent / "scenes" / "render_known.py"
         self._image = image
         self._timeout_seconds = timeout_seconds
         self._run_command = command_runner
+        self._network = network
+        self._environment = resolved_environment
 
     def render(self, job_id: str) -> RenderOutcome:
         try:
@@ -114,7 +130,14 @@ class DockerManimRenderer:
         started = monotonic()
 
         try:
-            result = self._run_command(command, self._timeout_seconds)
+            if self._environment:
+                result = self._run_command(
+                    command,
+                    self._timeout_seconds,
+                    {**os.environ, **self._environment},
+                )
+            else:
+                result = self._run_command(command, self._timeout_seconds)
         except subprocess.TimeoutExpired as error:
             elapsed = monotonic() - started
             cleanup_succeeded, cleanup_stderr = self._force_remove(container_name)
@@ -262,7 +285,7 @@ class DockerManimRenderer:
             "--name",
             container_name,
             "--network",
-            "none",
+            self._network,
             "--cpus",
             "1.0",
             "--memory",
@@ -284,6 +307,7 @@ class DockerManimRenderer:
             "/tmp:rw,noexec,nosuid,size=256m",
             "--env",
             "HOME=/tmp",
+            *[option for name in self._environment for option in ("--env", name)],
             "--volume",
             f"{scene_snapshot.resolve()}:/work/scene.py:ro",
             "--volume",

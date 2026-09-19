@@ -1,6 +1,13 @@
 name: dream-ai-math-tutor
 
 services:
+  manim-voiceover:
+    build:
+      context: ./backend
+      dockerfile: renderer.Dockerfile
+    image: dream-ai-manim-voiceover:local
+    profiles: ["renderer-build"]
+
   backend:
     build:
       context: ./backend
