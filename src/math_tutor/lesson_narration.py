@@ -5,7 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Protocol
 
-from math_tutor.jobs import PartialOutcome, Renderer, RenderOutcome
+from math_tutor.jobs import JobRenderer, PartialOutcome, RenderOutcome
 from math_tutor.narration import (
     MediaBundle,
     NarrationPlan,
@@ -29,7 +29,7 @@ class NarratingRenderer:
     def __init__(
         self,
         *,
-        renderer: Renderer,
+        renderer: JobRenderer,
         provider: NarrationProvider,
         assembler: MediaAssembler,
         plan_factory: Callable[[], NarrationPlan],

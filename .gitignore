@@ -226,3 +226,8 @@ artifacts/
 # Frontend dependencies and compiler state
 node_modules/
 *.tsbuildinfo
+
+# Local artifacts
+.playwright-mcp/
+docs/*
+!docs/.gitkeep

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -12,12 +12,20 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from math_tutor.domain import LessonJob, LessonStatus
+from math_tutor.generation import FROZEN_MODEL, ModelHealth
 from math_tutor.jobs import JobNotFoundError, LessonService, RenderQueueFullError
 from math_tutor.narration import NarrationStatus
 
 
 class CreateLessonRequest(BaseModel):
-    lesson: Literal["pythagorean-theorem"]
+    lesson: Literal["pythagorean-theorem", "generated-demo"]
+
+
+class ModelHealthResponse(BaseModel):
+    reachable: bool
+    model: str
+    model_available: bool
+    error: str | None
 
 
 class LessonResponse(BaseModel):
@@ -61,13 +69,39 @@ def to_response(job: LessonJob) -> LessonResponse:
     )
 
 
-def create_app(service: LessonService) -> FastAPI:
+def create_app(
+    service: LessonService,
+    *,
+    model_health: Callable[[], ModelHealth] | None = None,
+    close_model: Callable[[], None] | None = None,
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
         await run_in_threadpool(service.close)
+        if close_model is not None:
+            await run_in_threadpool(close_model)
 
     app = FastAPI(title="Math Tutor API", version="0.1.0", lifespan=lifespan)
+
+    @app.get("/model/health", response_model=ModelHealthResponse)
+    def get_model_health() -> ModelHealthResponse:
+        health = (
+            model_health()
+            if model_health is not None
+            else ModelHealth(
+                reachable=False,
+                model=FROZEN_MODEL,
+                model_available=False,
+                error="model provider is not configured",
+            )
+        )
+        return ModelHealthResponse(
+            reachable=health.reachable,
+            model=health.model,
+            model_available=health.model_available,
+            error=health.error,
+        )
 
     @app.post(
         "/lessons",

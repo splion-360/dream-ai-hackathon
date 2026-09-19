@@ -7,25 +7,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 from math_tutor.api import create_app
-from math_tutor.jobs import LessonService
+from math_tutor.jobs import DispatchingRenderer, LessonService
 from math_tutor.renderer import DEFAULT_MANIM_IMAGE, DockerManimRenderer
 
 
 @pytest.mark.integration
 def test_known_scene_job_returns_mp4_from_locked_down_container(tmp_path: Path) -> None:
-    scene = (
-        Path(__file__).parents[1]
-        / "src"
-        / "math_tutor"
-        / "scenes"
-        / "pythagorean_theorem.py"
-    )
+    scene = Path(__file__).parents[1] / "src" / "math_tutor" / "scenes" / "pythagorean_theorem.py"
     renderer = DockerManimRenderer(
         artifact_root=tmp_path / "artifacts",
         scene_path=scene,
         timeout_seconds=90,
     )
-    service = LessonService(renderer=renderer)
+    service = LessonService(renderer=DispatchingRenderer({"pythagorean-theorem": renderer}))
 
     with TestClient(create_app(service)) as client:
         submitted = client.post("/lessons", json={"lesson": "pythagorean-theorem"})

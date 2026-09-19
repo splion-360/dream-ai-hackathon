@@ -7,6 +7,7 @@ from time import monotonic, sleep
 from fastapi.testclient import TestClient
 
 from math_tutor.api import create_app
+from math_tutor.generation import ModelHealth, ProviderError
 from math_tutor.jobs import JobExecutionError, LessonService, PartialOutcome, RenderOutcome
 from math_tutor.narration import NarrationStatus
 
@@ -17,7 +18,7 @@ class ControlledRenderer:
         self.release = Event()
         self.video_path = video_path
 
-    def render(self, job_id: str) -> RenderOutcome:
+    def render(self, job_id: str, lesson: str) -> RenderOutcome:
         self.started.set()
         if not self.release.wait(timeout=2):
             raise RuntimeError("test renderer was never released")
@@ -30,12 +31,12 @@ class ControlledRenderer:
 
 
 class FailedRenderer:
-    def render(self, job_id: str) -> RenderOutcome:
+    def render(self, job_id: str, lesson: str) -> RenderOutcome:
         raise RuntimeError(f"render failed for {job_id}")
 
 
 class PartialRenderer:
-    def render(self, job_id: str) -> PartialOutcome:
+    def render(self, job_id: str, lesson: str) -> PartialOutcome:
         return PartialOutcome(
             renderer="partial-test-renderer",
             elapsed_seconds=0.01,
@@ -45,7 +46,7 @@ class PartialRenderer:
 
 
 class DiagnosticFailedRenderer:
-    def render(self, job_id: str) -> RenderOutcome:
+    def render(self, job_id: str, lesson: str) -> RenderOutcome:
         raise JobExecutionError(
             f"render failed for {job_id}",
             diagnostics={
@@ -62,7 +63,7 @@ class NarratedRenderer:
         self.silent = silent
         self.captions = captions
 
-    def render(self, job_id: str) -> RenderOutcome:
+    def render(self, job_id: str, lesson: str) -> RenderOutcome:
         return RenderOutcome(
             video_path=self.narrated,
             silent_video_path=self.silent,
@@ -217,3 +218,66 @@ def test_narrated_lesson_exposes_best_silent_and_caption_artifacts(tmp_path: Pat
     assert best_response.content == b"narrated"
     assert silent_response.content == b"silent"
     assert captions_response.text == "WEBVTT\n"
+
+
+def test_generated_demo_uses_the_same_asynchronous_job_contract(tmp_path: Path) -> None:
+    video = tmp_path / "generated.mp4"
+
+    class GeneratedRenderer:
+        def render(self, job_id: str, lesson: str) -> RenderOutcome:
+            assert lesson == "generated-demo"
+            video.write_bytes(b"video")
+            return RenderOutcome(video, "generated-renderer", 0.1, "rendered")
+
+    service = LessonService(renderer=GeneratedRenderer())
+
+    with TestClient(create_app(service)) as client:
+        submitted = client.post("/lessons", json={"lesson": "generated-demo"})
+        ready = wait_for_status(client, submitted.json()["id"], "ready")
+
+    assert submitted.status_code == 202
+    assert ready["lesson"] == "generated-demo"
+    assert ready["video_url"] is not None
+
+
+def test_model_health_reports_exact_checkpoint_availability_without_secrets(
+    tmp_path: Path,
+) -> None:
+    service = LessonService(renderer=ControlledRenderer(tmp_path / "unused.mp4"))
+
+    with TestClient(
+        create_app(
+            service,
+            model_health=lambda: ModelHealth(
+                reachable=True,
+                model="Qwen/Qwen3-4B",
+                model_available=False,
+            ),
+        )
+    ) as client:
+        response = client.get("/model/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "reachable": True,
+        "model": "Qwen/Qwen3-4B",
+        "model_available": False,
+        "error": None,
+    }
+    assert "key" not in response.text.lower()
+    assert "token" not in response.text.lower()
+
+
+def test_missing_model_credentials_reaches_terminal_failed_state() -> None:
+    class MissingCredentialRenderer:
+        def render(self, job_id: str, lesson: str) -> RenderOutcome:
+            raise ProviderError("Nebius API key is not configured")
+
+    service = LessonService(renderer=MissingCredentialRenderer())
+
+    with TestClient(create_app(service)) as client:
+        submitted = client.post("/lessons", json={"lesson": "generated-demo"})
+        failed = wait_for_status(client, submitted.json()["id"], "failed")
+
+    assert failed["error"] == "Nebius API key is not configured"
+    assert failed["video_url"] is None

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -10,6 +11,12 @@ from uuid import uuid4
 
 from math_tutor.domain import LessonJob, LessonStatus, utc_now
 from math_tutor.narration import NarrationStatus
+
+_SAFE_JOB_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def is_safe_job_id(value: str) -> bool:
+    return _SAFE_JOB_ID.fullmatch(value) is not None
 
 
 @dataclass(frozen=True)
@@ -43,8 +50,24 @@ class PartialOutcome:
     error: str
 
 
-class Renderer(Protocol):
+class JobRenderer(Protocol):
     def render(self, job_id: str) -> RenderOutcome | PartialOutcome: ...
+
+
+class Renderer(Protocol):
+    def render(self, job_id: str, lesson: str) -> RenderOutcome | PartialOutcome: ...
+
+
+class DispatchingRenderer:
+    def __init__(self, renderers: Mapping[str, JobRenderer]) -> None:
+        self._renderers = dict(renderers)
+
+    def render(self, job_id: str, lesson: str) -> RenderOutcome | PartialOutcome:
+        try:
+            renderer = self._renderers[lesson]
+        except KeyError as error:
+            raise JobExecutionError(f"no renderer configured for lesson '{lesson}'") from error
+        return renderer.render(job_id)
 
 
 class JobNotFoundError(KeyError):
@@ -165,7 +188,7 @@ class LessonService:
         store: JobStore | None = None,
         executor: ThreadPoolExecutor | None = None,
         max_pending_jobs: int = 8,
-        narration_requested: bool = False,
+        narration_requested: bool | Callable[[str], bool] = False,
     ) -> None:
         if max_pending_jobs <= 0:
             raise ValueError("max_pending_jobs must be positive")
@@ -181,9 +204,14 @@ class LessonService:
     def submit(self, lesson: str) -> LessonJob:
         if not self._capacity.acquire(blocking=False):
             raise RenderQueueFullError("render queue is full")
+        narration_requested = (
+            self._narration_requested(lesson)
+            if callable(self._narration_requested)
+            else self._narration_requested
+        )
         job = self._store.create(
             lesson,
-            narration_requested=self._narration_requested,
+            narration_requested=narration_requested,
         )
         try:
             self._executor.submit(self._run, job.id)
@@ -200,9 +228,9 @@ class LessonService:
 
     def _run(self, job_id: str) -> None:
         try:
-            self._store.mark_running(job_id)
+            job = self._store.mark_running(job_id)
             try:
-                outcome = self._renderer.render(job_id)
+                outcome = self._renderer.render(job_id, job.lesson)
             except Exception as error:
                 self._store.mark_failed(job_id, error)
             else:

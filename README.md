@@ -35,7 +35,7 @@ Copy `.env.example` to `.env` and populate credentials as integrations are enabl
 ## Run the API
 
 ```bash
-.venv/bin/uvicorn math_tutor.main:app --reload
+.venv/bin/uvicorn --env-file .env math_tutor.main:app --reload
 ```
 
 Submit the bundled Pythagorean theorem lesson:
@@ -52,6 +52,23 @@ The `202 Accepted` response contains a stable job `id` and begins in `queued`. P
 ```bash
 curl http://127.0.0.1:8000/lessons/JOB_ID
 ```
+
+Submit the fixed generated-lesson smoke test with the same job contract:
+
+```bash
+curl -i \
+  -X POST http://127.0.0.1:8000/lessons \
+  -H 'content-type: application/json' \
+  -d '{"lesson":"generated-demo"}'
+```
+
+The generated path reads `NEBIUS_API_KEY` only on the server, records the frozen model and decoding configuration, preserves the raw provider response, validates exactly one `GeneratedLesson` scene, and renders it in the same isolated container. Check provider reachability and exact-checkpoint availability separately:
+
+```bash
+curl http://127.0.0.1:8000/model/health
+```
+
+The frozen target is `Qwen/Qwen3-4B`. At the time of implementation it was supported for Nebius post-training but absent from this account's shared serverless inference catalog, so a live matching run requires a custom or dedicated endpoint. A smoke test against another model proves connectivity only and must not be reported as the frozen baseline.
 
 The status progresses through `queued` and `running` to a terminal `ready`, `partial`, or `failed` state. `partial` represents an incomplete lesson that still retains useful artifacts or diagnostics. A ready response contains a `video_url`; open that URL or download it with `curl`. When all render capacity is occupied, new submissions receive `503 Service Unavailable` with `Retry-After: 1` instead of accumulating an unbounded queue.
 
