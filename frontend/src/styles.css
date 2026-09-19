@@ -1,8 +1,9 @@
 :root {
   color: #eef2e8;
   background: #111827;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Comic Sans MS", "Comic Sans", cursive, sans-serif;
   font-synthesis: none;
+  --font-comic: "Comic Sans MS", "Comic Sans", cursive, sans-serif;
   --background: #111827;
   --surface: #182231;
   --surface-strong: #202c3d;
@@ -80,7 +81,7 @@ button:disabled {
   border-radius: 8px;
   background: rgba(112, 197, 184, 0.12);
   color: var(--primary);
-  font: 700 23px ui-serif, Georgia, serif;
+  font: 700 23px var(--font-comic);
 }
 
 .brand strong {
@@ -100,7 +101,7 @@ button:disabled {
 .narration-badge,
 .audio-state,
 .scene-label {
-  font: 600 10px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 600 10px/1.2 var(--font-comic);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -351,7 +352,7 @@ textarea:focus {
   display: block;
   overflow-x: auto;
   color: #f7f1d2;
-  font: 700 clamp(24px, 4vw, 42px)/1.25 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 700 clamp(24px, 4vw, 42px)/1.25 var(--font-comic);
   text-align: center;
   white-space: nowrap;
 }
@@ -557,7 +558,7 @@ textarea:focus {
 
 .proof-step > span {
   color: var(--primary);
-  font: 700 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 700 12px var(--font-comic);
 }
 
 .proof-step h3,
@@ -582,7 +583,7 @@ textarea:focus {
   background: rgba(255, 255, 255, 0.04);
   color: #f7f1d2;
   padding: 11px 13px;
-  font: 600 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 600 15px var(--font-comic);
 }
 
 .code-panel {
@@ -595,7 +596,7 @@ textarea:focus {
   padding: 14px 16px;
   color: var(--ink);
   cursor: pointer;
-  font: 700 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 700 12px var(--font-comic);
   letter-spacing: 0.11em;
   text-transform: uppercase;
 }
@@ -606,7 +607,7 @@ pre {
   border-top: 1px solid var(--border);
   padding: 18px;
   color: #d9f1d4;
-  font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 12px/1.7 var(--font-comic);
   white-space: pre-wrap;
 }
 
@@ -704,7 +705,7 @@ pre {
   border: 1px solid var(--border);
   border-radius: 50%;
   color: var(--primary);
-  font: 700 28px ui-serif, Georgia, serif;
+  font: 700 28px var(--font-comic);
 }
 
 .progress-card .spinner-mark {
