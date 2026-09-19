@@ -7,6 +7,8 @@ The first vertical slice accepts a known lesson as an asynchronous job, renders 
 - Python 3.11 or newer
 - [uv](https://docs.astral.sh/uv/)
 - Docker with at least 1 GB available to the render container
+- `ffmpeg` and `ffprobe` when narration is enabled
+- Node.js 20 or newer for the React frontend
 
 ## Setup
 
@@ -17,9 +19,18 @@ docker pull manimcommunity/manim@sha256:ab5ad56cf685d89da96e5d459e0cde3743fbdf21
 
 The image must be pinned by digest so development, evaluation, and demo renders use the same Manim environment. Startup rejects mutable image tags.
 
+Install the frontend separately:
+
+```bash
+cd frontend
+npm ci
+```
+
 ## Secrets
 
 Copy `.env.example` to `.env` and populate credentials as integrations are enabled. Environment files are reserved for secrets such as Nebius and ElevenLabs API keys; ordinary application configuration remains version-controlled in code.
+
+`ELEVENLABS_API_KEY` enables narration. When it is absent, the same API and frontend operate in silent-video mode. The ElevenLabs voice, model, output format, timeouts, and other non-secret choices live in Python code.
 
 ## Run the API
 
@@ -61,6 +72,26 @@ The frozen target is `Qwen/Qwen3-4B`. At the time of implementation it was suppo
 
 The status progresses through `queued` and `running` to a terminal `ready`, `partial`, or `failed` state. `partial` represents an incomplete lesson that still retains useful artifacts or diagnostics. A ready response contains a `video_url`; open that URL or download it with `curl`. When all render capacity is occupied, new submissions receive `503 Service Unavailable` with `Retry-After: 1` instead of accumulating an unbounded queue.
 
+With narration enabled, `narration_status` progresses from `pending` to `ready` or `unavailable`. The response is additive and exposes:
+
+- `video_url`: the best playable result, narrated when available and silent otherwise;
+- `silent_video_url`: the original Manim render;
+- `captions_url`: measured-timing WebVTT captions when narration succeeds;
+- `explanation` and `generated_code`: nullable handoff fields for the Nebius generation pipeline.
+
+Narration is intentionally all-or-nothing for the MVP. ElevenLabs, duration-probe, caption, or mux failures are sanitized and recorded in diagnostics while the lesson remains `ready` with its silent video. Segment durations come from `ffprobe`, not text-length estimates, and drive the audio timeline and captions. Visual cue names are retained for a future cue-aware Manim renderer; this branch preserves the full silent render, pads shorter narration with silence, and does not retime individual visual events. Word-, phoneme-, and cue-level visual alignment are outside this hackathon slice.
+
+## Run the frontend
+
+Start FastAPI on port 8000, then run:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Vite proxies `/lessons` to FastAPI. The browser talks only to the lesson API; it never receives Nebius or ElevenLabs credentials. The current submission transport deliberately targets the bundled Pythagorean fixture until the generation ticket supplies arbitrary prompts. Typed fixtures cover queued, running, narrated success, silent fallback, partial, and failed states.
+
 ## Isolation and artifacts
 
 Every render runs with:
@@ -81,6 +112,7 @@ Run the fast suite, lint, and type checking:
 .venv/bin/pytest -q
 .venv/bin/ruff check src tests
 PYTHONPATH=src .venv/bin/mypy src
+cd frontend && npm test && npm run typecheck && npm run build
 ```
 
 Run the real API-to-container-to-MP4 check after pulling the image:
