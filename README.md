@@ -1,71 +1,37 @@
 # Math Tutor
 
-**Turn a math question into a visual, narrated lesson.**
+**Ask a math question. Get a narrated visual lesson.**
 
-Math Tutor helps learners understand ideas that are difficult to explain with text alone. A learner can ask about anything from the Pythagorean theorem to Fourier transforms. The product writes a visual explanation, renders it as a Manim video, and adds spoken narration and captions.
+Some math ideas are hard to explain with another wall of text. Math Tutor turns a question into a custom animation, so learners can watch the idea unfold instead.
 
-## The problem
+It can cover anything from basic geometry to calculus, Fourier transforms, and other advanced topics.
 
-Most AI tutors answer a math question with more text. That can work for a short calculation, but it often falls short when the learner needs to see a shape move, a graph change, or a proof unfold one step at a time.
+## How it works
 
-Making a good visual lesson by hand takes time. It requires mathematical knowledge, animation code, rendering tools, and clear narration. We want to make that process available from a single prompt.
+1. Ask a question in plain English or LaTeX.
+2. Pick the difficulty that feels right.
+3. The model writes a Manim scene for the lesson.
+4. The code is checked and rendered in an isolated container.
+5. ElevenLabs adds narration that moves with the animation.
 
-## What we are building
+![A question moves through routing, generation, validation, rendering, and narration to become a visual lesson.](assets/product-flow.svg)
 
-A learner writes a question in plain language or LaTeX. Math Tutor then:
+If narration fails, the silent animation can still be returned. Generated code is kept away from the main app while it runs.
 
-1. Chooses a model trained for the right level of difficulty.
-2. Generates an explanation and Manim animation code.
-3. Checks the code before running it.
-4. Renders the animation in an isolated container.
-5. Adds ElevenLabs narration and captions.
-6. Returns the video, explanation, source code, and routing details.
+## Different questions need different tutors
 
-![A learner prompt moves through routing, generation, validation, Manim rendering, narration, and assembly to become a visual lesson.](assets/readme/product-flow.svg)
+A first geometry lesson should not feel like a graduate analysis lecture. We use three small LoRA specialists on top of the same Qwen3-4B model:
 
-If narration or audio assembly fails, the learner still receives the silent video and useful error details. If rendering fails, the explanation and generated code remain available.
+- **Foundational** for introductory ideas.
+- **Intermediate** for longer, multi-step lessons.
+- **Advanced** for dense notation and higher-level topics.
 
-## Learning at different levels
+The selected difficulty routes the question to its matching specialist. The specialists run through a shared Modal endpoint, so we do not need three separate copies of the full model.
 
-One model should not explain every topic in exactly the same way. A basic geometry question and an advanced analysis question may need different language, pacing, and visual choices.
+![Training examples are split by difficulty and used to train three LoRA specialists on one shared model.](assets/training-pipeline.svg)
 
-We start with Qwen3-4B and train three small LoRA adapters:
+For now, routing is simple and predictable. The learner chooses the level. A learned router and dynamic adapter spawning are the next research steps.
 
-- **Foundational** — introductory ideas and shorter visual lessons.
-- **Intermediate** — multi-step explanations and richer scenes.
-- **Advanced** — denser notation, proofs, and higher-level topics.
+## The idea
 
-A LoRA adapter is a small set of learned changes placed on top of the same base model. This lets us create specialists without training or storing three complete models. A router chooses one specialist for each request.
-
-![Training examples are divided into three difficulty groups and used to train three LoRA specialists on the same Qwen3-4B base model.](assets/readme/training-pipeline.svg)
-
-Today, these are three fixed specialists. The current route comes from the known or requested difficulty. Learning the route automatically—and deciding when a new specialist is useful—is the next research step.
-
-## Results so far
-
-We prepared **995 prompt-and-Manim examples** and used **895 for training** and **100 for validation**. All three specialist training jobs completed successfully.
-
-| Specialist | Training examples | Validation examples | First validation loss | Final validation loss |
-| --- | ---: | ---: | ---: | ---: |
-| Foundational | 302 | 34 | 0.668 | **0.494** |
-| Intermediate | 299 | 33 | 0.566 | **0.457** |
-| Advanced | 294 | 33 | 0.510 | **0.435** |
-
-Lower validation loss means the model became better at matching the held-out examples. These numbers show that training worked; they do **not** yet prove that every generated video is correct. Our next evaluation measures whether the code parses, follows the lesson request, and renders successfully on the first attempt.
-
-## Why this approach matters
-
-- **Visual first:** the answer is an animation, not only a block of text.
-- **Broad subject range:** the product is intended for both foundational and advanced mathematics.
-- **Specialized explanations:** each request can use the model best suited to its difficulty.
-- **Safer execution:** generated Python is checked and rendered without network access.
-- **Useful fallbacks:** one failed step does not have to erase the rest of the lesson.
-- **Visible reasoning path:** the interface can show which specialist handled the request.
-
-## Current state
-
-The web experience, FastAPI service, Manim rendering, ElevenLabs narration, captions, and three trained LoRA adapters are in place. We are connecting the adapters to a GPU inference service and measuring their effect on code quality and render success.
-
-## Built with
-
-Qwen3-4B · LoRA · FastAPI · React · Manim · ElevenLabs · Docker · FFmpeg
+Math explanations should feel made for the question—not pulled from a generic video library. The goal is simple: make difficult ideas easier to see, hear, and understand.
