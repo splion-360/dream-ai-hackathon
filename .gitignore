@@ -222,3 +222,7 @@ artifacts/
 
 # Local Git worktrees
 .worktrees/
+
+# Frontend dependencies and compiler state
+node_modules/
+*.tsbuildinfo

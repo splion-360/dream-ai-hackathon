@@ -1,0 +1,97 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@1,6..72,500&display=swap");
+
+:root {
+  font-family: "Manrope", system-ui, sans-serif;
+  color: #151713;
+  background: #f2f0e8;
+  font-synthesis: none;
+  --ink: #151713;
+  --paper: #f2f0e8;
+  --acid: #c9ff4a;
+  --line: rgba(21, 23, 19, 0.16);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, textarea { font: inherit; }
+
+.app-shell {
+  min-height: 100vh;
+  padding: 0 clamp(20px, 5vw, 80px);
+  background:
+    radial-gradient(circle at 88% 18%, rgba(201, 255, 74, 0.35), transparent 22rem),
+    linear-gradient(rgba(21, 23, 19, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(21, 23, 19, 0.04) 1px, transparent 1px),
+    var(--paper);
+  background-size: auto, 32px 32px, 32px 32px, auto;
+}
+
+.masthead {
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -0.04em; }
+.brand-mark { display: grid; place-items: center; width: 36px; height: 36px; color: var(--acid); background: var(--ink); border-radius: 50%; font-size: 20px; }
+.engine-badge { display: flex; align-items: center; gap: 9px; font: 500 11px/1 "DM Mono", monospace; text-transform: uppercase; letter-spacing: 0.08em; }
+.engine-badge i { width: 8px; height: 8px; border-radius: 50%; background: #60ba46; box-shadow: 0 0 0 4px rgba(96, 186, 70, 0.16); }
+
+.hero { max-width: 1050px; margin: 0 auto; padding: clamp(72px, 10vw, 132px) 0 54px; }
+.eyebrow, .result-kicker { font: 500 12px/1 "DM Mono", monospace; text-transform: uppercase; letter-spacing: 0.14em; }
+.eyebrow::before { content: "↗"; margin-right: 10px; }
+h1 { max-width: 900px; margin: 20px 0 24px; font-size: clamp(52px, 8vw, 104px); line-height: 0.9; letter-spacing: -0.075em; font-weight: 600; }
+h1 em { font-family: "Newsreader", Georgia, serif; font-weight: 500; }
+.hero-copy { max-width: 670px; font-size: clamp(17px, 2vw, 22px); line-height: 1.55; color: #50534b; }
+
+.prompt-card { margin-top: 52px; background: #fffef9; border: 1px solid var(--ink); box-shadow: 8px 8px 0 var(--ink); padding: clamp(20px, 3vw, 32px); }
+.prompt-card label { display: block; margin-bottom: 15px; font: 500 12px/1 "DM Mono", monospace; text-transform: uppercase; letter-spacing: 0.1em; }
+.prompt-card textarea { width: 100%; resize: vertical; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: clamp(20px, 3vw, 32px); line-height: 1.35; letter-spacing: -0.035em; }
+.prompt-footer { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-top: 22px; border-top: 1px solid var(--line); }
+.prompt-footer > span { color: #777a70; font: 11px "DM Mono", monospace; }
+.prompt-footer button { border: 0; background: var(--ink); color: white; padding: 15px 19px; display: flex; align-items: center; gap: 28px; cursor: pointer; font-weight: 600; }
+.prompt-footer button:hover { background: #2d312a; }
+.prompt-footer button:disabled { opacity: 0.55; cursor: wait; }
+.prompt-footer button span { color: var(--acid); font-size: 20px; }
+
+.request-error, .fallback-note { max-width: 1050px; margin: 20px auto; padding: 14px 18px; background: #fff1e7; border-left: 4px solid #df633d; }
+.result-card { max-width: 1050px; margin: 28px auto 90px; background: #1a1d18; color: #f8f7f0; border-radius: 2px; padding: clamp(24px, 5vw, 52px); box-shadow: 12px 12px 0 var(--acid); }
+.result-card h2 { margin: 8px 0; font-size: clamp(28px, 4vw, 48px); line-height: 1; letter-spacing: -0.045em; }
+.result-card p { color: #bfc2b8; line-height: 1.6; }
+.progress-card { display: grid; grid-template-columns: auto 1fr; gap: 36px; align-items: center; }
+.orbital-loader { width: 104px; height: 104px; border: 1px solid #62665c; border-radius: 50%; display: grid; place-items: center; position: relative; }
+.orbital-loader::after { content: ""; position: absolute; inset: -1px; border-radius: 50%; border-top: 3px solid var(--acid); animation: orbit 1.2s linear infinite; }
+.orbital-loader span { color: var(--acid); font: 26px "DM Mono", monospace; }
+@keyframes orbit { to { transform: rotate(360deg); } }
+
+.result-heading { display: flex; justify-content: space-between; gap: 20px; align-items: start; margin-bottom: 28px; }
+.status-dot { white-space: nowrap; font: 11px "DM Mono", monospace; border: 1px solid #55594f; padding: 9px 11px; }
+.status-ready::before { content: "●"; color: var(--acid); margin-right: 8px; }
+.video-frame { position: relative; overflow: hidden; background: #090a08; border: 1px solid #373a34; aspect-ratio: 16 / 9; }
+.video-frame video { width: 100%; height: 100%; display: block; }
+.equation-stamp { position: absolute; top: 16px; right: 16px; background: var(--acid); color: var(--ink); padding: 8px 12px; font: 500 13px "DM Mono", monospace; }
+.fallback-note { margin: 18px 0 0; background: #2a2d27; border-left-color: var(--acid); color: #dbddd5 !important; }
+.partial-placeholder { min-height: 180px; display: grid; place-items: center; text-align: center; border: 1px dashed #696d63; color: #c7c9c2; padding: 30px; }
+.lesson-details { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 32px; background: #3b3e37; }
+.lesson-details article { background: #1a1d18; padding: 26px; }
+.lesson-details h3 { margin: 12px 0 8px; font-size: 20px; }
+.detail-number { color: var(--acid); font: 11px "DM Mono", monospace; }
+pre { overflow: auto; color: #d8f7a8; font: 12px/1.6 "DM Mono", monospace; white-space: pre-wrap; }
+.error-card { box-shadow: 12px 12px 0 #ff704d; }
+
+footer { max-width: 1050px; margin: 0 auto; padding: 30px 0 44px; display: flex; gap: 30px; justify-content: center; border-top: 1px solid var(--line); color: #6b6e65; font: 10px "DM Mono", monospace; text-transform: uppercase; letter-spacing: 0.1em; }
+
+@media (max-width: 700px) {
+  .engine-badge { display: none; }
+  .prompt-footer, .result-heading { align-items: stretch; flex-direction: column; }
+  .prompt-footer button { justify-content: space-between; }
+  .progress-card, .lesson-details { grid-template-columns: 1fr; }
+  .orbital-loader { width: 74px; height: 74px; }
+  footer { flex-wrap: wrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orbital-loader::after { animation: none; }
+}
