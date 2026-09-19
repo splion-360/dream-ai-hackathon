@@ -10,6 +10,7 @@ def test_modal_module_does_not_check_the_local_adapter_source_during_remote_impo
     monkeypatch,
 ) -> None:
     installed_packages: list[str] = []
+    function_options: dict[str, object] = {}
 
     class FakeImage:
         @classmethod
@@ -33,7 +34,8 @@ def test_modal_module_does_not_check_the_local_adapter_source_during_remote_impo
         def __init__(self, *_args: object) -> None:
             pass
 
-        def function(self, **_kwargs: object):
+        def function(self, **kwargs: object):
+            function_options.update(kwargs)
             return lambda function: function
 
     fake_modal = SimpleNamespace(
@@ -56,3 +58,4 @@ def test_modal_module_does_not_check_the_local_adapter_source_during_remote_impo
     runpy.run_path(Path(__file__).parents[2] / "modal" / "qwen3_lora_vllm.py")
 
     assert installed_packages == ["vllm==0.21.0"]
+    assert function_options["max_containers"] == 1

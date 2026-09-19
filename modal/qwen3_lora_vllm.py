@@ -34,6 +34,7 @@ vllm_image = (
 @app.function(
     image=vllm_image,
     gpu="L4",
+    max_containers=1,
     scaledown_window=15 * 60,
     timeout=20 * 60,
     volumes={"/root/.cache/huggingface": hf_cache},
