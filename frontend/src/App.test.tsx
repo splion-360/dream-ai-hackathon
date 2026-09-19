@@ -15,8 +15,8 @@ import { MockLessonTransport } from "./transport";
 
 describe("LessonResult", () => {
   it.each([
-    [queuedLesson, "Queued"],
-    [runningLesson, "Building your lesson"],
+    [queuedLesson, "Queued for a render worker"],
+    [runningLesson, "Rendering your visual lesson"],
   ])("renders progress state", (lesson, text) => {
     render(<LessonResult lesson={lesson} />);
     expect(screen.getByText(text)).toBeInTheDocument();
@@ -82,12 +82,13 @@ describe("App lesson flow", () => {
     ]);
     render(<App transport={transport} pollIntervalMs={0} />);
 
-    expect(screen.getByText("Lesson composer / 01")).toBeInTheDocument();
-    expect(screen.getByText("Formalized expression")).toBeInTheDocument();
+    expect(screen.getByText("Create a visual lesson")).toBeInTheDocument();
+    expect(screen.getByText("Your generated visual lesson will appear here.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /generate lesson/i }));
 
     expect(await screen.findByText("Narrated lesson ready")).toBeInTheDocument();
+    expect(screen.getByText("Generated visual lesson")).toBeInTheDocument();
     expect(screen.getByText("Synchronized captions")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /generate lesson/i })).toBeEnabled();
   });
