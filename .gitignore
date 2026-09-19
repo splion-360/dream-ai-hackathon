@@ -232,3 +232,5 @@ node_modules/
 docs/*
 !docs/.gitkeep
 docs/superpowers/
+# Downloaded and converted training corpora
+training/data/
