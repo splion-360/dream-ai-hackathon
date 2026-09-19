@@ -222,3 +222,8 @@ artifacts/
 
 # Local Git worktrees
 .worktrees/
+
+# Local artifacts
+.playwright-mcp/
+docs/*
+!docs/.gitkeep
