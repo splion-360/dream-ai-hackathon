@@ -59,6 +59,36 @@ Observed on 2026-09-19: all jobs were accepted with status `running` on `Qwen/Qw
 Every job uses two epochs, batch size 8, learning rate `2×10⁻⁴`, LoRA rank 16, alpha 32,
 dropout 0.05, packing enabled, context length 8192, and seed 42.
 
+## Completed training results
+
+Measured on 2026-09-19: all three jobs succeeded. The table compares the first and final
+checkpoint within each specialist run. A lower validation loss is better.
+
+| Specialist | Final step | Trained tokens | First validation loss | Final validation loss | Final training loss |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Foundational | 8 | 492,292 | 0.667636 | 0.494433 | 0.889643 |
+| Intermediate | 12 | 633,454 | 0.566213 | 0.457106 | 0.690507 |
+| Advanced | 14 | 830,266 | 0.509646 | 0.435447 | 0.616614 |
+
+Total training consumption reported by Token Factory was 1,956,012 tokens.
+
+The downloaded `adapter_config.json` files confirm rank 16, alpha 32, dropout 0.05, and LoRA
+attachment to `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, and `down_proj`.
+Each adapter contains 66,119,208 bytes of weights.
+
+These within-run losses show that optimization occurred. They do not establish that specialists
+outperform the base model, a shared LoRA, or one another because those controlled evaluations have
+not yet run.
+
+## Serving limitation
+
+Observed on 2026-09-19: Token Factory accepted and completed training but rejected the documented
+serverless deployment request with `LoRA adapter deployment is no longer available`. Calling the
+returned `ft:` checkpoint directly also returned `model does not exist`. Current dedicated-endpoint
+documentation says custom weights are beta and require support enablement. The adapter weights and
+configurations were therefore downloaded into ignored local `training/artifacts/token_factory/`
+directories, but routed inference is not currently available through this account.
+
 ## Check live job status
 
 Live, read-only: loads the API key only inside the shell and prints bounded job metadata without
