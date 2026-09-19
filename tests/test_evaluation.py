@@ -1,0 +1,109 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from math_tutor.evaluation import (
+    AttemptRecord,
+    DatasetValidationError,
+    aggregate_metrics,
+    load_evaluation_slice,
+    validate_evaluation_slice,
+)
+
+
+def test_committed_evaluation_slice_has_five_unique_examples_per_difficulty() -> None:
+    path = Path("data/evaluation/manim_eval_v1.jsonl")
+
+    examples = load_evaluation_slice(path)
+
+    assert len(examples) == 15
+    assert len({example.id for example in examples}) == 15
+    assert {difficulty: sum(e.difficulty == difficulty for e in examples) for difficulty in (
+        "foundational",
+        "intermediate",
+        "advanced",
+    )} == {"foundational": 5, "intermediate": 5, "advanced": 5}
+    assert all(example.split == "evaluation" for example in examples)
+    assert all(example.source_name and example.source_reference for example in examples)
+
+
+def test_evaluation_slice_rejects_training_identifier_overlap() -> None:
+    examples = load_evaluation_slice(Path("data/evaluation/manim_eval_v1.jsonl"))
+
+    with pytest.raises(DatasetValidationError, match="overlap"):
+        validate_evaluation_slice(examples, training_ids={examples[0].id})
+
+
+def test_metrics_use_all_first_attempts_as_denominator_and_break_down_difficulty() -> None:
+    attempts = [
+        _attempt("f-1", "foundational", extraction=True, parse=True, render=True),
+        _attempt(
+            "i-1",
+            "intermediate",
+            extraction=True,
+            parse=True,
+            render=False,
+            timed_out=True,
+        ),
+        _attempt("a-1", "advanced", extraction=False, parse=False, render=False),
+        _attempt(
+            "a-1-repair",
+            "advanced",
+            extraction=True,
+            parse=True,
+            render=True,
+            first_attempt=False,
+        ),
+    ]
+
+    metrics = aggregate_metrics(attempts)
+
+    assert metrics["first_attempt"] == {
+        "attempts": 3,
+        "extraction_success_rate": pytest.approx(2 / 3),
+        "parse_success_rate": pytest.approx(2 / 3),
+        "render_pass_at_1": pytest.approx(1 / 3),
+        "timeout_rate": pytest.approx(1 / 3),
+        "mean_generation_latency_seconds": 0.5,
+        "mean_render_latency_seconds": pytest.approx(2 / 3),
+        "prompt_tokens": 30,
+        "completion_tokens": 60,
+        "total_tokens": 90,
+    }
+    assert metrics["repair_attempts"] == 1
+    assert metrics["by_difficulty"]["advanced"]["attempts"] == 1
+    assert metrics["by_difficulty"]["advanced"]["render_pass_at_1"] == 0.0
+
+
+def _attempt(
+    example_id: str,
+    difficulty: str,
+    *,
+    extraction: bool,
+    parse: bool,
+    render: bool,
+    timed_out: bool = False,
+    first_attempt: bool = True,
+) -> AttemptRecord:
+    return AttemptRecord(
+        example_id=example_id,
+        difficulty=difficulty,
+        topic="topic",
+        prompt="prompt",
+        model="Qwen/Qwen3-4B",
+        extraction_success=extraction,
+        parse_success=parse,
+        render_success=render,
+        timed_out=timed_out,
+        generation_latency_seconds=0.5,
+        render_latency_seconds=1.0 if extraction else 0.0,
+        prompt_tokens=10,
+        completion_tokens=20,
+        total_tokens=30,
+        first_attempt=first_attempt,
+        failure_stage=None if render else "render",
+        artifact_directory=f"attempts/{example_id}",
+        renderer="docker:test",
+    )

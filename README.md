@@ -24,7 +24,7 @@ Copy `.env.example` to `.env` and populate credentials as integrations are enabl
 ## Run the API
 
 ```bash
-.venv/bin/uvicorn math_tutor.main:app --reload
+.venv/bin/uvicorn --env-file .env math_tutor.main:app --reload
 ```
 
 Submit the bundled Pythagorean theorem lesson:
