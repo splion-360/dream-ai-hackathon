@@ -17,6 +17,7 @@ import math
 import numpy as np
 Define exactly one renderable class named GeneratedLesson that inherits from Scene.
 For directions, use only UP, DOWN, LEFT, RIGHT, UL, UR, DL, or DR; never use LR.
+Never pass a Mobject method to self.play; use object.animate.method(arguments) instead.
 Do not access files, the network, subprocesses, environment variables, or dynamic execution.
 Keep the animation under 45 seconds and use only APIs available in Manim Community v0.19.
 """
