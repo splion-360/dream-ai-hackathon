@@ -28,7 +28,7 @@ export interface LessonJob {
 
 export interface CreateLessonInput {
   prompt: string;
-  difficulty: Difficulty;
+  difficulty?: Difficulty;
 }
 
 export interface LessonTransport {
