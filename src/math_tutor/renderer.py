@@ -11,7 +11,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from math_tutor.jobs import RenderOutcome
+from math_tutor.jobs import JobExecutionError, RenderOutcome
 
 CommandRunner = Callable[[list[str], float], subprocess.CompletedProcess[str]]
 DEFAULT_MANIM_IMAGE = (
@@ -19,10 +19,11 @@ DEFAULT_MANIM_IMAGE = (
     "ab5ad56cf685d89da96e5d459e0cde3743fbdf2141be4dcff6c26566b5ca3191"
 )
 _SAFE_JOB_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_DIGEST_PINNED_IMAGE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
 _LOG_LIMIT = 32_000
 
 
-class RenderError(RuntimeError):
+class RenderError(JobExecutionError):
     pass
 
 
@@ -55,6 +56,8 @@ class DockerManimRenderer:
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
+        if not _DIGEST_PINNED_IMAGE.fullmatch(image):
+            raise ValueError("Manim image must be digest-pinned")
         self._artifact_root = artifact_root.resolve()
         self._scene_path = scene_path.resolve()
         self._validation_script = Path(__file__).parent / "scenes" / "render_known.py"
@@ -68,8 +71,10 @@ class DockerManimRenderer:
         job_dir = self._artifact_root / job_id
         job_dir.mkdir(parents=True, exist_ok=False)
         scene_snapshot = job_dir / "scene.py"
+        validator_snapshot = job_dir / "render_known.py"
         try:
             shutil.copyfile(self._scene_path, scene_snapshot)
+            shutil.copyfile(self._validation_script, validator_snapshot)
         except OSError as error:
             self._write_metadata(
                 job_dir,
@@ -81,13 +86,20 @@ class DockerManimRenderer:
                 stdout="",
                 stderr=str(error),
                 scene_sha256=None,
+                validator_sha256=None,
             )
-            raise RenderFailed(f"could not snapshot known scene: {error}") from error
+            raise self._failed(f"could not snapshot render inputs: {error}", str(error)) from error
         scene_digest = sha256(scene_snapshot.read_bytes()).hexdigest()
+        validator_digest = sha256(validator_snapshot.read_bytes()).hexdigest()
         output_dir = job_dir / "output"
         output_dir.mkdir()
         container_name = f"math-tutor-render-{job_id}"
-        command = self._render_command(scene_snapshot, output_dir, container_name)
+        command = self._render_command(
+            scene_snapshot,
+            validator_snapshot,
+            output_dir,
+            container_name,
+        )
         started_at = datetime.now(UTC)
         started = monotonic()
 
@@ -108,12 +120,19 @@ class DockerManimRenderer:
                 stdout=stdout,
                 stderr=stderr,
                 scene_sha256=scene_digest,
+                validator_sha256=validator_digest,
                 cleanup_succeeded=cleanup_succeeded,
                 cleanup_stderr=cleanup_stderr,
             )
             cleanup_detail = "" if cleanup_succeeded else "; container cleanup failed"
+            message = f"Manim render exceeded {self._timeout_seconds} seconds{cleanup_detail}"
+            logs = "\n".join(part for part in (stdout, stderr, cleanup_stderr) if part)
             raise RenderTimedOut(
-                f"Manim render exceeded {self._timeout_seconds} seconds{cleanup_detail}"
+                message,
+                diagnostics=self._failure_diagnostics(
+                    logs,
+                    cleanup_succeeded=cleanup_succeeded,
+                ),
             ) from error
         except (OSError, subprocess.SubprocessError) as error:
             elapsed = monotonic() - started
@@ -127,8 +146,9 @@ class DockerManimRenderer:
                 stdout="",
                 stderr=str(error),
                 scene_sha256=scene_digest,
+                validator_sha256=validator_digest,
             )
-            raise RenderFailed(f"could not start Manim container: {error}") from error
+            raise self._failed(f"could not start Manim container: {error}", str(error)) from error
 
         elapsed = monotonic() - started
         stdout = _trim(result.stdout)
@@ -144,9 +164,13 @@ class DockerManimRenderer:
                 stdout=stdout,
                 stderr=stderr,
                 scene_sha256=scene_digest,
+                validator_sha256=validator_digest,
             )
             detail = stderr or stdout or "no renderer output"
-            raise RenderFailed(f"Manim exited with code {result.returncode}: {detail}")
+            raise self._failed(
+                f"Manim exited with code {result.returncode}: {detail}",
+                "\n".join(part for part in (stdout, stderr) if part),
+            )
 
         videos = list((output_dir / "media").rglob("PythagoreanTheorem.mp4"))
         if len(videos) != 1:
@@ -160,8 +184,10 @@ class DockerManimRenderer:
                 stdout=stdout,
                 stderr=stderr,
                 scene_sha256=scene_digest,
+                validator_sha256=validator_digest,
             )
-            raise RenderFailed(f"expected one rendered video, found {len(videos)}")
+            message = f"expected one rendered video, found {len(videos)}"
+            raise self._failed(message, "\n".join(part for part in (stdout, stderr) if part))
 
         video_path = videos[0]
         safe_video = False
@@ -182,8 +208,9 @@ class DockerManimRenderer:
                 stdout=stdout,
                 stderr="unsafe rendered video path",
                 scene_sha256=scene_digest,
+                validator_sha256=validator_digest,
             )
-            raise RenderFailed("unsafe rendered video path")
+            raise self._failed("unsafe rendered video path", "unsafe rendered video path")
 
         self._write_metadata(
             job_dir,
@@ -195,6 +222,7 @@ class DockerManimRenderer:
             stdout=stdout,
             stderr=stderr,
             scene_sha256=scene_digest,
+            validator_sha256=validator_digest,
         )
         return RenderOutcome(
             video_path=resolved_video,
@@ -206,6 +234,7 @@ class DockerManimRenderer:
     def _render_command(
         self,
         scene_snapshot: Path,
+        validator_snapshot: Path,
         output_dir: Path,
         container_name: str,
     ) -> list[str]:
@@ -237,7 +266,7 @@ class DockerManimRenderer:
             "--volume",
             f"{scene_snapshot.resolve()}:/work/scene.py:ro",
             "--volume",
-            f"{self._validation_script.resolve()}:/work/render_known.py:ro",
+            f"{validator_snapshot.resolve()}:/work/render_known.py:ro",
             "--volume",
             f"{output_dir.resolve()}:/work/output:rw",
             "--workdir",
@@ -267,6 +296,7 @@ class DockerManimRenderer:
         stdout: str,
         stderr: str,
         scene_sha256: str | None,
+        validator_sha256: str | None,
         cleanup_succeeded: bool | None = None,
         cleanup_stderr: str = "",
     ) -> None:
@@ -275,6 +305,8 @@ class DockerManimRenderer:
             "image": self._image,
             "scene": "scene.py",
             "scene_sha256": scene_sha256,
+            "validator": "render_known.py",
+            "validator_sha256": validator_sha256,
             "command": command,
             "started_at": started_at.isoformat(),
             "completed_at": datetime.now(UTC).isoformat(),
@@ -290,6 +322,17 @@ class DockerManimRenderer:
             json.dumps(metadata, indent=2, sort_keys=True),
             encoding="utf-8",
         )
+
+    def _failure_diagnostics(self, logs: str, **extra: object) -> dict[str, object]:
+        return {
+            "renderer": f"docker:{self._image}",
+            "logs": _trim(logs),
+            "metadata_file": "render.json",
+            **extra,
+        }
+
+    def _failed(self, message: str, logs: str) -> RenderFailed:
+        return RenderFailed(message, diagnostics=self._failure_diagnostics(logs))
 
 
 def _trim(value: str | None) -> str:

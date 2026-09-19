@@ -7,7 +7,7 @@ from time import monotonic, sleep
 from fastapi.testclient import TestClient
 
 from math_tutor.api import create_app
-from math_tutor.jobs import LessonService, PartialOutcome, RenderOutcome
+from math_tutor.jobs import JobExecutionError, LessonService, PartialOutcome, RenderOutcome
 
 
 class ControlledRenderer:
@@ -40,6 +40,18 @@ class PartialRenderer:
             elapsed_seconds=0.01,
             logs="video unavailable",
             error=f"partial result for {job_id}",
+        )
+
+
+class DiagnosticFailedRenderer:
+    def render(self, job_id: str) -> RenderOutcome:
+        raise JobExecutionError(
+            f"render failed for {job_id}",
+            diagnostics={
+                "renderer": "diagnostic-test-renderer",
+                "logs": "container exited 42",
+                "metadata_file": "render.json",
+            },
         )
 
 
@@ -104,6 +116,20 @@ def test_render_failure_reaches_terminal_failed_state() -> None:
     assert failed["completed_at"] is not None
     assert failed["video_url"] is None
     assert "render failed" in failed["error"]
+
+
+def test_render_failure_exposes_bounded_diagnostics() -> None:
+    service = LessonService(renderer=DiagnosticFailedRenderer())
+
+    with TestClient(create_app(service)) as client:
+        submitted = client.post("/lessons", json={"lesson": "pythagorean-theorem"})
+        failed = wait_for_status(client, submitted.json()["id"], "failed")
+
+    assert failed["diagnostics"] == {
+        "renderer": "diagnostic-test-renderer",
+        "logs": "container exited 42",
+        "metadata_file": "render.json",
+    }
 
 
 def test_useful_incomplete_result_reaches_terminal_partial_state() -> None:

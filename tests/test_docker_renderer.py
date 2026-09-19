@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from math_tutor.renderer import DockerManimRenderer, RenderFailed, RenderTimedOut
+from math_tutor.renderer import (
+    DEFAULT_MANIM_IMAGE,
+    DockerManimRenderer,
+    RenderFailed,
+    RenderTimedOut,
+)
 
 
 def test_renderer_runs_known_scene_with_resource_and_network_limits(tmp_path: Path) -> None:
@@ -29,7 +34,7 @@ def test_renderer_runs_known_scene_with_resource_and_network_limits(tmp_path: Pa
     renderer = DockerManimRenderer(
         artifact_root=artifacts,
         scene_path=scene,
-        image="manimcommunity/manim:v0.19.0",
+        image=DEFAULT_MANIM_IMAGE,
         timeout_seconds=30,
         command_runner=successful_run,
     )
@@ -37,7 +42,7 @@ def test_renderer_runs_known_scene_with_resource_and_network_limits(tmp_path: Pa
     outcome = renderer.render("job-123")
 
     assert outcome.video_path.read_bytes() == b"mp4"
-    assert outcome.renderer == "docker:manimcommunity/manim:v0.19.0"
+    assert outcome.renderer == f"docker:{DEFAULT_MANIM_IMAGE}"
     command = commands[0]
     assert command[:3] == ["docker", "run", "--rm"]
     assert _option(command, "--network") == "none"
@@ -51,11 +56,13 @@ def test_renderer_runs_known_scene_with_resource_and_network_limits(tmp_path: Pa
 
     metadata = json.loads((artifacts / "job-123" / "render.json").read_text())
     assert metadata["status"] == "ready"
-    assert metadata["image"] == "manimcommunity/manim:v0.19.0"
+    assert metadata["image"] == DEFAULT_MANIM_IMAGE
     assert metadata["exit_code"] == 0
     assert metadata["stdout"] == "rendered"
     assert metadata["scene_sha256"] == sha256(b"# known-good scene").hexdigest()
+    assert len(metadata["validator_sha256"]) == 64
     assert (artifacts / "job-123" / "scene.py").read_text() == "# known-good scene"
+    assert (artifacts / "job-123" / "render_known.py").is_file()
 
 
 def test_renderer_force_removes_container_after_timeout(tmp_path: Path) -> None:
@@ -149,7 +156,7 @@ def test_renderer_preserves_diagnostics_when_docker_cannot_start(tmp_path: Path)
         command_runner=missing_docker,
     )
 
-    with pytest.raises(RenderFailed, match="docker executable missing"):
+    with pytest.raises(RenderFailed, match="docker executable missing") as caught:
         renderer.render("missing-docker-job")
 
     metadata = json.loads(
@@ -157,6 +164,8 @@ def test_renderer_preserves_diagnostics_when_docker_cannot_start(tmp_path: Path)
     )
     assert metadata["status"] == "failed"
     assert metadata["stderr"] == "docker executable missing"
+    assert caught.value.diagnostics["logs"] == "docker executable missing"
+    assert caught.value.diagnostics["metadata_file"] == "render.json"
 
 
 def test_renderer_rejects_video_symlink_that_escapes_job_directory(tmp_path: Path) -> None:
@@ -186,6 +195,15 @@ def test_renderer_rejects_video_symlink_that_escapes_job_directory(tmp_path: Pat
 
     with pytest.raises(RenderFailed, match="unsafe rendered video path"):
         renderer.render("symlink-job")
+
+
+def test_renderer_rejects_mutable_image_tag(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="digest-pinned"):
+        DockerManimRenderer(
+            artifact_root=tmp_path / "artifacts",
+            scene_path=_scene_file(tmp_path),
+            image="manimcommunity/manim:v0.19.0",
+        )
 
 
 def _option(command: list[str], name: str) -> str:

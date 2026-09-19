@@ -15,7 +15,7 @@ uv sync --python 3.12
 docker pull manimcommunity/manim@sha256:ab5ad56cf685d89da96e5d459e0cde3743fbdf2141be4dcff6c26566b5ca3191
 ```
 
-The image is pinned by digest so development, evaluation, and demo renders use the same Manim environment.
+The image must be pinned by digest so development, evaluation, and demo renders use the same Manim environment. Startup rejects mutable image tags.
 
 ## Run the API
 
@@ -50,7 +50,7 @@ Every render runs with:
 - all Linux capabilities dropped and privilege escalation disabled;
 - a configurable 90-second wall-clock timeout followed by forced cleanup.
 
-Each job writes under `artifacts/<job-id>/`. A snapshot and SHA-256 hash preserve the exact scene source. The MP4 stays beneath `output/media/`, while `render.json` records the image, command, timestamps, timeout, cleanup result, exit code, and bounded stdout/stderr needed to reproduce or diagnose the attempt. Before a job becomes ready, PyAV decodes a video frame inside the pinned container and the host rejects symlinks or paths escaping the job output directory. Generated artifacts are intentionally ignored by Git.
+Each job writes under `artifacts/<job-id>/`. Snapshots and SHA-256 hashes preserve the exact scene and validation source. The MP4 stays beneath `output/media/`, while `render.json` records the image, command, timestamps, timeout, cleanup result, exit code, and bounded stdout/stderr needed to reproduce or diagnose the attempt. Failed job responses also include bounded renderer diagnostics. Before a job becomes ready, PyAV decodes a video frame inside the pinned container and the host rejects symlinks or paths escaping the job output directory. Generated artifacts are intentionally ignored by Git.
 
 Configuration can be supplied through the variables documented in [.env.example](.env.example). These variables are read from the process environment; the application does not automatically load the file.
 

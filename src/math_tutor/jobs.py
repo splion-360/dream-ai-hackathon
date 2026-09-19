@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -17,6 +17,17 @@ class RenderOutcome:
     renderer: str
     elapsed_seconds: float
     logs: str
+
+
+class JobExecutionError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        diagnostics: Mapping[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.diagnostics = dict(diagnostics or {})
 
 
 @dataclass(frozen=True)
@@ -89,6 +100,7 @@ class JobStore:
         )
 
     def mark_failed(self, job_id: str, error: Exception) -> LessonJob:
+        diagnostics = error.diagnostics if isinstance(error, JobExecutionError) else {}
         return self._mutate(
             job_id,
             lambda job: replace(
@@ -96,6 +108,7 @@ class JobStore:
                 status=LessonStatus.FAILED,
                 completed_at=utc_now(),
                 error=str(error),
+                diagnostics=diagnostics,
             ),
         )
 
