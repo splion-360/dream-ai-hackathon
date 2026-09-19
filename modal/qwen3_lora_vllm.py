@@ -20,9 +20,6 @@ ADAPTER_SOURCE = Path(
 ADAPTER_DESTINATION = "/adapters"
 ADAPTER_NAMES = ("foundational", "intermediate", "advanced")
 
-if not ADAPTER_SOURCE.is_dir():
-    raise RuntimeError(f"adapter artifacts are missing at {ADAPTER_SOURCE}")
-
 app = modal.App(APP_NAME)
 hf_cache = modal.Volume.from_name("dream-ai-huggingface-cache", create_if_missing=True)
 vllm_image = (
