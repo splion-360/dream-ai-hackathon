@@ -5,10 +5,12 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from math_tutor.api import create_app
+from math_tutor.domain import Difficulty
 from math_tutor.elevenlabs import ElevenLabsNarrationProvider
 from math_tutor.generated_lesson import GeneratedLessonPipeline
 from math_tutor.generation import (
     GenerationConfig,
+    ModalVllmClient,
     NebiusTokenFactoryClient,
     UnavailableModelClient,
 )
@@ -113,6 +115,28 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             plan_factory=generated_narration_plan,
             artifact_root=resolved.artifact_root,
         )
+    routed_renderers = {}
+    modal_clients: dict[Difficulty, ModalVllmClient] = {}
+    if resolved.modal_vllm_base_url:
+        modal_api_key = (
+            resolved.modal_vllm_api_key.get_secret_value()
+            if resolved.modal_vllm_api_key is not None
+            else ""
+        )
+        for difficulty in Difficulty:
+            modal_client = ModalVllmClient(
+                api_key=modal_api_key,
+                config=GenerationConfig(model=difficulty.value),
+                base_url=resolved.modal_vllm_base_url,
+                timeout_seconds=resolved.modal_vllm_timeout_seconds,
+            )
+            modal_clients[difficulty] = modal_client
+            routed_renderers[difficulty] = GeneratedLessonPipeline(
+                artifact_root=resolved.artifact_root,
+                prompt=GENERATED_DEMO_PROMPT,
+                generator=modal_client,
+                renderer=base_renderer,
+            )
     dispatcher = DispatchingRenderer(
         {
             "pythagorean-theorem": pythagorean_renderer,
@@ -120,15 +144,24 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         },
         fallback=generated_fallback,
     )
+    def close_models() -> None:
+        model.close()
+        for modal_client in modal_clients.values():
+            modal_client.close()
+
+    model_health = (
+        modal_clients[Difficulty.FOUNDATIONAL].health if modal_clients else model.health
+    )
     return create_app(
         LessonService(
             renderer=dispatcher,
             max_pending_jobs=resolved.max_pending_jobs,
             narration_requested=lambda lesson: bool(elevenlabs_api_key)
             and lesson != "generated-demo",
+            routed_renderers=routed_renderers,
         ),
-        model_health=model.health,
-        close_model=model.close,
+        model_health=model_health,
+        close_model=close_models,
     )
 
 

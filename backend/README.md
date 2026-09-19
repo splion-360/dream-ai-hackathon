@@ -70,6 +70,46 @@ curl http://127.0.0.1:8000/model/health
 
 The frozen target is `Qwen/Qwen3-4B`. At the time of implementation it was supported for Nebius post-training but absent from this account's shared serverless inference catalog, so a live matching run requires a custom or dedicated endpoint. A smoke test against another model proves connectivity only and must not be reported as the frozen baseline.
 
+## Modal vLLM with difficulty adapters
+
+`modal/qwen3_lora_vllm.py` is the hackathon serving path: one Modal L4 process runs
+`Qwen/Qwen3-4B` with all three PEFT adapters loaded through vLLM multi-LoRA. The deployment
+script reads the ignored adapter artifacts only from the primary checkout at
+`training/artifacts/token_factory/`; it never places weights in this worktree or Git.
+
+From the repository root, after authenticating the Modal CLI, deploy it with:
+
+```bash
+modal deploy modal/qwen3_lora_vllm.py
+```
+
+Copy the resulting URL (including `/v1`) into the backend environment. Add a bearer token only
+when the Modal endpoint requires one; leave it blank for an unauthenticated endpoint.
+
+```bash
+MODAL_VLLM_BASE_URL=https://YOUR-WORKSPACE--dream-ai-qwen3-lora-serve.modal.direct/v1
+MODAL_VLLM_API_KEY=
+```
+
+With `MODAL_VLLM_BASE_URL` set, jobs submitted with `difficulty` equal to `foundational`,
+`intermediate`, or `advanced` send the corresponding adapter name as the OpenAI `model` value.
+Jobs without difficulty, or any setup without that URL, retain the existing Nebius path. The
+health endpoint checks the foundational adapter when Modal routing is enabled.
+
+Before connecting the backend, verify that the Modal endpoint advertises all adapters and accepts
+one request:
+
+```bash
+curl "$MODAL_VLLM_BASE_URL/models" -H "Authorization: Bearer $MODAL_VLLM_API_KEY"
+curl "$MODAL_VLLM_BASE_URL/chat/completions" \
+  -H "Authorization: Bearer $MODAL_VLLM_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"model":"foundational","messages":[{"role":"user","content":"Reply with OK."}],"max_tokens":8}'
+```
+
+Do not claim the endpoint is live until both commands return successfully. Modal authentication is
+account-specific; run `modal setup` if `modal deploy` reports missing credentials.
+
 The status progresses through `queued` and `running` to a terminal `ready`, `partial`, or `failed` state. `partial` represents an incomplete lesson that still retains useful artifacts or diagnostics. A ready response contains a `video_url`; open that URL or download it with `curl`. When all render capacity is occupied, new submissions receive `503 Service Unavailable` with `Retry-After: 1` instead of accumulating an unbounded queue.
 
 With narration enabled, `narration_status` progresses from `pending` to `ready` or

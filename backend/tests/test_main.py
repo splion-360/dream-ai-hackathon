@@ -74,3 +74,50 @@ def test_build_app_without_secret_keeps_provider_unavailable(tmp_path: Path) -> 
         "model_available": False,
         "error": "Nebius API key is not configured",
     }
+
+
+def test_build_app_configures_one_modal_client_per_difficulty(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    observed_models: list[str] = []
+
+    class RecordingModalClient:
+        def __init__(
+            self,
+            *,
+            api_key: str,
+            config: GenerationConfig,
+            base_url: str,
+            timeout_seconds: float = 60,
+        ) -> None:
+            assert api_key == "modal-secret"
+            assert base_url == "https://workspace--qwen.modal.direct/v1"
+            assert timeout_seconds == 90
+            observed_models.append(config.model)
+            self.config = config
+
+        def generate(self, prompt: str) -> GenerationResult:
+            raise AssertionError("generation is not part of this test")
+
+        def health(self) -> ModelHealth:
+            return ModelHealth(True, self.config.model, True)
+
+        def close(self) -> None:
+            return None
+
+    import math_tutor.main as main
+
+    monkeypatch.setattr(main, "ModalVllmClient", RecordingModalClient)
+    settings = Settings(
+        _env_file=None,
+        modal_vllm_base_url="https://workspace--qwen.modal.direct/v1",
+        modal_vllm_api_key="modal-secret",
+        modal_vllm_timeout_seconds=90,
+        artifact_root=tmp_path / "artifacts",
+    )
+
+    app = main.build_app(settings)
+
+    assert app is not None
+    assert observed_models == ["foundational", "intermediate", "advanced"]
