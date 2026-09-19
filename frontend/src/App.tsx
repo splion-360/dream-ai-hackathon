@@ -71,7 +71,7 @@ export function App({ transport = defaultTransport, pollIntervalMs = 700 }: AppP
             <small>Visual math studio</small>
           </span>
         </a>
-        <span className="engine-pill">Dynamic LoRA + Manim + ElevenLabs</span>
+        <span className="engine-pill">Specialist LoRA + Manim + ElevenLabs</span>
       </header>
 
       <section className="workspace-grid">
