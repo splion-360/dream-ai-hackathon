@@ -80,6 +80,13 @@ def test_generate_sends_frozen_decoding_config_and_preserves_usage() -> None:
     assert json.loads(result.provider_response)["id"] == "chatcmpl-123"
 
 
+def test_system_prompt_requires_imports_for_every_referenced_module() -> None:
+    config = GenerationConfig()
+
+    assert "Start the code with exactly these three lines" in config.system_prompt
+    assert "from manim import *\nimport math\nimport numpy as np" in config.system_prompt
+
+
 def test_health_distinguishes_reachable_api_from_unavailable_model() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/v1/models"

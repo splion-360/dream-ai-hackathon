@@ -50,7 +50,7 @@ def test_build_app_uses_injected_settings_for_nebius(
     assert response.json()["model_available"] is True
     assert observed == {
         "api_key": "injected-secret",
-        "model": "Qwen/Qwen3-4B",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
         "base_url": "https://nebius.example/v1",
         "closed": True,
     }
@@ -70,7 +70,7 @@ def test_build_app_without_secret_keeps_provider_unavailable(tmp_path: Path) -> 
 
     assert response.json() == {
         "reachable": False,
-        "model": "Qwen/Qwen3-4B",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
         "model_available": False,
         "error": "Nebius API key is not configured",
     }

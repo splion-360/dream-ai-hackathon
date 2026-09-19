@@ -6,6 +6,8 @@ from pathlib import Path
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from math_tutor.generation import DEMO_INFERENCE_MODEL
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -17,6 +19,7 @@ class Settings(BaseSettings):
     nebius_api_key: SecretStr | None = None
     elevenlabs_api_key: SecretStr | None = None
     nebius_base_url: str = "https://api.tokenfactory.nebius.com/v1"
+    nebius_model: str = DEMO_INFERENCE_MODEL
     artifact_root: Path = Path("artifacts")
     render_timeout_seconds: float = Field(default=90, gt=0)
     max_pending_jobs: int = Field(default=8, gt=0)

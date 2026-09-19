@@ -67,7 +67,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             artifact_root=resolved.artifact_root,
         )
 
-    generation_config = GenerationConfig()
+    generation_config = GenerationConfig(model=resolved.nebius_model)
     nebius_api_key = (
         resolved.nebius_api_key.get_secret_value()
         if resolved.nebius_api_key is not None

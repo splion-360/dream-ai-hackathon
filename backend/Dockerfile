@@ -26,7 +26,7 @@ EXPOSE 8000
 
 FROM base AS development
 RUN uv sync --frozen
-CMD ["uvicorn", "math_tutor.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "math_tutor.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "src/math_tutor"]
 
 FROM base AS production
 CMD ["uvicorn", "math_tutor.main:app", "--host", "0.0.0.0", "--port", "8000"]
