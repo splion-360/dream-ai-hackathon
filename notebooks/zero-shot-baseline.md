@@ -50,7 +50,7 @@ but the exact checkpoint still needs a custom or dedicated endpoint.
 
 ```sh {"name":"check_nebius_model"}
 cd ..
-uv run --env-file .env python -c 'import os; from math_tutor.generation import GenerationConfig, NebiusTokenFactoryClient; client=NebiusTokenFactoryClient(api_key=os.environ["NEBIUS_API_KEY"], config=GenerationConfig()); print(client.health()); client.close()'
+uv run --env-file .env python -c 'from math_tutor.generation import GenerationConfig, NebiusTokenFactoryClient; from math_tutor.settings import get_settings; settings=get_settings(); client=NebiusTokenFactoryClient(api_key=settings.nebius_api_key.get_secret_value(), base_url=settings.nebius_base_url, config=GenerationConfig()); print(client.health()); client.close()'
 ```
 
 ## Execute the frozen baseline

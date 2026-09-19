@@ -11,6 +11,8 @@ from math_tutor.generation import (
     ProviderError,
 )
 
+NEBIUS_BASE_URL = "https://api.tokenfactory.nebius.com/v1"
+
 
 def test_generate_sends_frozen_decoding_config_and_preserves_usage() -> None:
     observed: dict[str, object] = {}
@@ -46,6 +48,7 @@ def test_generate_sends_frozen_decoding_config_and_preserves_usage() -> None:
     client = NebiusTokenFactoryClient(
         api_key="nebius-secret",
         config=config,
+        base_url=NEBIUS_BASE_URL,
         transport=httpx.MockTransport(handler),
     )
 
@@ -88,6 +91,7 @@ def test_health_distinguishes_reachable_api_from_unavailable_model() -> None:
     client = NebiusTokenFactoryClient(
         api_key="nebius-secret",
         config=GenerationConfig(),
+        base_url=NEBIUS_BASE_URL,
         transport=httpx.MockTransport(handler),
     )
 
@@ -108,6 +112,7 @@ def test_provider_error_does_not_expose_credentials_or_response_body() -> None:
     client = NebiusTokenFactoryClient(
         api_key=secret,
         config=GenerationConfig(),
+        base_url=NEBIUS_BASE_URL,
         transport=httpx.MockTransport(handler),
     )
 
@@ -125,6 +130,7 @@ def test_malformed_success_response_is_a_sanitized_provider_error() -> None:
     client = NebiusTokenFactoryClient(
         api_key="nebius-secret",
         config=GenerationConfig(),
+        base_url=NEBIUS_BASE_URL,
         transport=httpx.MockTransport(handler),
     )
 

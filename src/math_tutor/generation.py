@@ -6,7 +6,6 @@ from typing import Any
 
 import httpx
 
-NEBIUS_BASE_URL = "https://api.tokenfactory.nebius.com/v1"
 FROZEN_MODEL = "Qwen/Qwen3-4B"
 SYSTEM_PROMPT = """You generate one self-contained Manim Community Python scene.
 Return exactly one Python code fence and no prose.
@@ -63,7 +62,7 @@ class NebiusTokenFactoryClient:
         *,
         api_key: str,
         config: GenerationConfig,
-        base_url: str = NEBIUS_BASE_URL,
+        base_url: str,
         timeout_seconds: float = 60,
         transport: httpx.BaseTransport | None = None,
     ) -> None:

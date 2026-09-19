@@ -15,6 +15,7 @@ from math_tutor.evaluation import (
     validate_evaluation_slice,
 )
 from math_tutor.generation import GenerationConfig, ModelHealth
+from math_tutor.settings import Settings
 
 
 def test_committed_evaluation_slice_has_five_unique_examples_per_difficulty() -> None:
@@ -124,6 +125,7 @@ def test_evaluation_records_unexpected_attempt_error_and_continues(
         artifact_root=tmp_path,
         run_id="unexpected-error-run",
         api_key="redacted",
+        base_url="https://nebius.example/v1",
     )
 
     attempts = [
@@ -150,6 +152,53 @@ def test_unattempted_difficulty_rates_are_unmeasured() -> None:
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "total_tokens": 0,
+    }
+
+
+def test_evaluation_cli_uses_shared_settings_for_nebius(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    import math_tutor.evaluation as evaluation
+
+    observed: dict[str, object] = {}
+    settings = Settings(
+        _env_file=None,
+        nebius_api_key="evaluation-secret",
+        nebius_base_url="https://nebius.example/v1",
+    )
+
+    def fake_run_evaluation(**kwargs: object) -> dict[str, object]:
+        observed.update(kwargs)
+        return {"first_attempt": {"attempts": 0}}
+
+    monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
+    monkeypatch.setattr(evaluation, "get_settings", lambda: settings, raising=False)
+    monkeypatch.setattr(evaluation, "run_evaluation", fake_run_evaluation)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "math_tutor.evaluation",
+            "--dataset",
+            "data/evaluation/manim_eval_v1.jsonl",
+            "--artifact-root",
+            str(tmp_path),
+            "--run-id",
+            "settings-run",
+        ],
+    )
+
+    evaluation.main()
+
+    assert observed == {
+        "dataset_path": Path("data/evaluation/manim_eval_v1.jsonl"),
+        "artifact_root": tmp_path,
+        "run_id": "settings-run",
+        "api_key": "evaluation-secret",
+        "base_url": "https://nebius.example/v1",
     }
 
 

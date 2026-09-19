@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from collections import Counter
 from collections.abc import Iterable, Sequence
@@ -21,6 +20,7 @@ from math_tutor.renderer import (
     RenderFailed,
     RenderTimedOut,
 )
+from math_tutor.settings import get_settings
 
 Difficulty = Literal["foundational", "intermediate", "advanced"]
 DIFFICULTIES: tuple[Difficulty, ...] = ("foundational", "intermediate", "advanced")
@@ -180,10 +180,15 @@ def run_evaluation(
     artifact_root: Path,
     run_id: str,
     api_key: str,
+    base_url: str,
 ) -> dict[str, object]:
     examples = load_evaluation_slice(dataset_path)
     config = GenerationConfig()
-    client = NebiusTokenFactoryClient(api_key=api_key, config=config)
+    client = NebiusTokenFactoryClient(
+        api_key=api_key,
+        config=config,
+        base_url=base_url,
+    )
     health = client.health()
     if not health.reachable or not health.model_available:
         client.close()
@@ -316,14 +321,15 @@ def main() -> None:
     parser.add_argument("--artifact-root", type=Path, default=Path("artifacts/evaluations"))
     parser.add_argument("--run-id", required=True)
     args = parser.parse_args()
-    api_key = os.environ.get("NEBIUS_API_KEY", "")
-    if not api_key:
+    settings = get_settings()
+    if settings.nebius_api_key is None:
         raise SystemExit("NEBIUS_API_KEY is required")
     metrics = run_evaluation(
         dataset_path=args.dataset,
         artifact_root=args.artifact_root,
         run_id=args.run_id,
-        api_key=api_key,
+        api_key=settings.nebius_api_key.get_secret_value(),
+        base_url=settings.nebius_base_url,
     )
     print(json.dumps(metrics, indent=2, sort_keys=True))
 
