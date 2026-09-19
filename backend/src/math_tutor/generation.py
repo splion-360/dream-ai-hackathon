@@ -31,7 +31,13 @@ from manim_voiceover import VoiceoverScene
 from manim_voiceover.services.elevenlabs import ElevenLabsService
 Define exactly one renderable class named GeneratedLesson that inherits from VoiceoverScene.
 At the beginning of construct, call exactly once:
-self.set_speech_service(ElevenLabsService(voice_id="__VOICE_ID__"))
+self.set_speech_service(
+    ElevenLabsService(
+        voice_id="__VOICE_ID__",
+        model="eleven_multilingual_v2",
+        transcription_model=None,
+    )
+)
 Create 3 to 6 short narration blocks using `with self.voiceover(text="...") as tracker:`.
 Place each related visual animation inside its narration block and set the primary animation's
 run_time to tracker.duration. Keep narration concise and explain the mathematics being shown.

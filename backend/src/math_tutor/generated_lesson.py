@@ -3,13 +3,15 @@ from __future__ import annotations
 import ast
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from time import monotonic
 from typing import Protocol
 
 from math_tutor.generation import GenerationConfig, GenerationResult, ProviderError
 from math_tutor.jobs import JobExecutionError, RenderOutcome, is_safe_job_id
+from math_tutor.narration import NarrationStatus
+from math_tutor.renderer import RenderError
 
 _PYTHON_FENCE = re.compile(r"```(?:python|py)\s*\n(.*?)```", re.IGNORECASE | re.DOTALL)
 _ALLOWED_IMPORTS = frozenset({"manim", "math", "numpy"})
@@ -65,6 +67,33 @@ class SourceRenderer(Protocol):
     def render_source(self, job_id: str, source: str, scene_class: str) -> RenderOutcome: ...
 
 
+class PromptLessonRenderer(Protocol):
+    def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome: ...
+
+
+class VoiceoverFallbackRenderer:
+    def __init__(
+        self,
+        *,
+        primary: PromptLessonRenderer,
+        fallback: PromptLessonRenderer,
+    ) -> None:
+        self._primary = primary
+        self._fallback = fallback
+
+    def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome:
+        try:
+            outcome = self._primary.render(job_id, prompt)
+        except RenderError as error:
+            fallback = self._fallback.render(f"{job_id}-silent", prompt)
+            return replace(
+                fallback,
+                narration_status=NarrationStatus.UNAVAILABLE,
+                narration_diagnostics={"voiceover_error": str(error)},
+            )
+        return replace(outcome, narration_status=NarrationStatus.READY)
+
+
 def extract_and_validate_scene(
     response: str,
     *,
@@ -112,9 +141,7 @@ def extract_and_validate_scene(
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
             root = module.partition(".")[0]
-            permitted = root in _ALLOWED_IMPORTS or (
-                voiceover and module in _VOICEOVER_IMPORTS
-            )
+            permitted = root in _ALLOWED_IMPORTS or (voiceover and module in _VOICEOVER_IMPORTS)
             if not permitted:
                 raise _unsafe_import(module or root)
         elif isinstance(node, (ast.Name, ast.Attribute)) and _is_dunder_identifier(
@@ -148,6 +175,34 @@ def _validate_voiceover_contract(tree: ast.Module) -> None:
     if len(service_calls) != 1:
         raise SceneValidationError(
             "generated voiceover scene must configure speech service exactly once",
+            diagnostics={"failure_stage": "validation"},
+        )
+    service_argument = service_calls[0].args[0] if service_calls[0].args else None
+    disables_transcription = (
+        isinstance(service_argument, ast.Call)
+        and isinstance(service_argument.func, ast.Name)
+        and service_argument.func.id == "ElevenLabsService"
+        and any(
+            keyword.arg == "transcription_model"
+            and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is None
+            for keyword in service_argument.keywords
+        )
+    )
+    if not disables_transcription:
+        raise SceneValidationError(
+            "ElevenLabsService must set transcription_model=None",
+            diagnostics={"failure_stage": "validation"},
+        )
+    uses_supported_model = isinstance(service_argument, ast.Call) and any(
+        keyword.arg == "model"
+        and isinstance(keyword.value, ast.Constant)
+        and keyword.value.value == "eleven_multilingual_v2"
+        for keyword in service_argument.keywords
+    )
+    if not uses_supported_model:
+        raise SceneValidationError(
+            "ElevenLabsService must use model eleven_multilingual_v2",
             diagnostics={"failure_stage": "validation"},
         )
     voiceover_calls = [

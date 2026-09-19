@@ -93,6 +93,8 @@ def test_voiceover_prompt_requires_timed_narration_blocks() -> None:
     assert "ElevenLabsService" in VOICEOVER_SYSTEM_PROMPT
     assert "3 to 6" in VOICEOVER_SYSTEM_PROMPT
     assert "tracker.duration" in VOICEOVER_SYSTEM_PROMPT
+    assert "transcription_model=None" in VOICEOVER_SYSTEM_PROMPT
+    assert 'model="eleven_multilingual_v2"' in VOICEOVER_SYSTEM_PROMPT
 
 
 def test_health_distinguishes_reachable_api_from_unavailable_model() -> None:

@@ -11,6 +11,7 @@ from math_tutor.generated_lesson import (
     GeneratedLessonError,
     GeneratedLessonPipeline,
     SceneValidationError,
+    VoiceoverFallbackRenderer,
     extract_and_validate_scene,
 )
 from math_tutor.generation import (
@@ -21,6 +22,8 @@ from math_tutor.generation import (
     TokenUsage,
 )
 from math_tutor.jobs import RenderOutcome
+from math_tutor.narration import NarrationStatus
+from math_tutor.renderer import RenderFailed
 
 VALID_SCENE = """from manim import *
 
@@ -35,7 +38,13 @@ from manim_voiceover.services.elevenlabs import ElevenLabsService
 
 class GeneratedLesson(VoiceoverScene):
     def construct(self):
-        self.set_speech_service(ElevenLabsService(voice_id="voice-id"))
+        self.set_speech_service(
+            ElevenLabsService(
+                voice_id="voice-id",
+                model="eleven_multilingual_v2",
+                transcription_model=None,
+            )
+        )
         circle = Circle()
         with self.voiceover(text="Draw the circle.") as tracker:
             self.play(Create(circle), run_time=tracker.duration)
@@ -80,6 +89,18 @@ class FailingGenerator:
 
     def generate(self, prompt: str) -> GenerationResult:
         raise ProviderError("provider unavailable")
+
+
+class RecordingPromptRenderer:
+    def __init__(self, outcome: RenderOutcome | Exception) -> None:
+        self._outcome = outcome
+        self.calls: list[tuple[str, str | None]] = []
+
+    def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome:
+        self.calls.append((job_id, prompt))
+        if isinstance(self._outcome, Exception):
+            raise self._outcome
+        return self._outcome
 
 
 def _generation(content: str) -> GenerationResult:
@@ -155,6 +176,32 @@ def test_voiceover_validation_requires_three_to_six_blocks_and_tracker_duration(
     without_duration = VOICEOVER_SCENE.replace("tracker.duration", "1")
     with pytest.raises(SceneValidationError, match="tracker.duration"):
         extract_and_validate_scene(f"```python\n{without_duration}```", voiceover=True)
+
+
+def test_voiceover_validation_disables_optional_whisper_transcription() -> None:
+    default_transcription = VOICEOVER_SCENE.replace(
+        "                transcription_model=None,\n",
+        "",
+    )
+
+    with pytest.raises(SceneValidationError, match="transcription_model=None"):
+        extract_and_validate_scene(
+            f"```python\n{default_transcription}```",
+            voiceover=True,
+        )
+
+
+def test_voiceover_validation_rejects_deprecated_elevenlabs_model() -> None:
+    deprecated_model = VOICEOVER_SCENE.replace(
+        'model="eleven_multilingual_v2"',
+        'model="eleven_monolingual_v1"',
+    )
+
+    with pytest.raises(SceneValidationError, match="eleven_multilingual_v2"):
+        extract_and_validate_scene(
+            f"```python\n{deprecated_model}```",
+            voiceover=True,
+        )
 
 
 def test_rejects_ambiguous_multiple_code_fences() -> None:
@@ -292,3 +339,48 @@ def test_pipeline_rejects_unsafe_job_id_before_writing_or_generation(tmp_path: P
 
     assert caught.value.diagnostics == {"failure_stage": "validation"}
     assert not (tmp_path / "escaped").exists()
+
+
+def test_voiceover_fallback_returns_primary_with_ready_narration(tmp_path: Path) -> None:
+    outcome = RenderOutcome(tmp_path / "voice.mp4", "voice", 1, "rendered")
+    primary = RecordingPromptRenderer(outcome)
+    fallback = RecordingPromptRenderer(
+        RenderOutcome(tmp_path / "silent.mp4", "silent", 1, "rendered")
+    )
+
+    result = VoiceoverFallbackRenderer(primary=primary, fallback=fallback).render(
+        "job-1", "Explain limits"
+    )
+
+    assert result.narration_status is NarrationStatus.READY
+    assert primary.calls == [("job-1", "Explain limits")]
+    assert fallback.calls == []
+
+
+def test_voiceover_fallback_retries_render_failure_as_silent_lesson(tmp_path: Path) -> None:
+    primary = RecordingPromptRenderer(RenderFailed("ElevenLabs failed"))
+    silent = RenderOutcome(tmp_path / "silent.mp4", "silent", 2, "rendered")
+    fallback = RecordingPromptRenderer(silent)
+
+    result = VoiceoverFallbackRenderer(primary=primary, fallback=fallback).render(
+        "job-2", "Explain limits"
+    )
+
+    assert result.video_path == silent.video_path
+    assert result.narration_status is NarrationStatus.UNAVAILABLE
+    assert result.narration_diagnostics == {"voiceover_error": "ElevenLabs failed"}
+    assert fallback.calls == [("job-2-silent", "Explain limits")]
+
+
+def test_voiceover_fallback_does_not_retry_generation_failure(tmp_path: Path) -> None:
+    primary = RecordingPromptRenderer(GeneratedLessonError("invalid scene"))
+    fallback = RecordingPromptRenderer(
+        RenderOutcome(tmp_path / "silent.mp4", "silent", 1, "rendered")
+    )
+
+    with pytest.raises(GeneratedLessonError, match="invalid scene"):
+        VoiceoverFallbackRenderer(primary=primary, fallback=fallback).render(
+            "job-3", "Explain limits"
+        )
+
+    assert fallback.calls == []
