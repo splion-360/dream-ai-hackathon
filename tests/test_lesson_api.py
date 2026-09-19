@@ -28,6 +28,11 @@ class ControlledRenderer:
         )
 
 
+class FailedRenderer:
+    def render(self, job_id: str) -> RenderOutcome:
+        raise RuntimeError(f"render failed for {job_id}")
+
+
 def wait_for_status(client: TestClient, job_id: str, expected: str) -> dict[str, object]:
     deadline = monotonic() + 2
     while monotonic() < deadline:
@@ -77,3 +82,15 @@ def test_unknown_job_returns_not_found(tmp_path: Path) -> None:
 
     assert response.status_code == 404
     assert response.json() == {"detail": "lesson job not found"}
+
+
+def test_render_failure_reaches_terminal_failed_state() -> None:
+    service = LessonService(renderer=FailedRenderer())
+
+    with TestClient(create_app(service)) as client:
+        submitted = client.post("/lessons", json={"lesson": "pythagorean-theorem"})
+        failed = wait_for_status(client, submitted.json()["id"], "failed")
+
+    assert failed["completed_at"] is not None
+    assert failed["video_url"] is None
+    assert "render failed" in failed["error"]

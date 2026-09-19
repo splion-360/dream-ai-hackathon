@@ -27,6 +27,7 @@ packages = ["src/math_tutor"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = ["integration: requires Docker and the pinned Manim image"]
 
 [tool.ruff]
 line-length = 100
@@ -39,3 +40,4 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.11"
 strict = true
 packages = ["math_tutor"]
+exclude = ["src/math_tutor/scenes/"]
