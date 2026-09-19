@@ -194,6 +194,26 @@ textarea:focus {
   box-shadow: 0 0 0 1px var(--primary);
 }
 
+.difficulty-label {
+  display: block;
+  margin-top: 18px;
+}
+
+#lesson-difficulty {
+  width: 100%;
+  border: 1px solid rgba(238, 242, 232, 0.22);
+  border-radius: 0;
+  outline: 0;
+  background: var(--field);
+  color: var(--ink);
+  padding: 12px 14px;
+}
+
+#lesson-difficulty:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
 .sample-row {
   display: flex;
   flex-wrap: wrap;

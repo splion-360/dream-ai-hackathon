@@ -21,12 +21,19 @@ class LessonStatus(StrEnum):
     FAILED = "failed"
 
 
+class Difficulty(StrEnum):
+    FOUNDATIONAL = "foundational"
+    INTERMEDIATE = "intermediate"
+    ADVANCED = "advanced"
+
+
 @dataclass(frozen=True)
 class LessonJob:
     id: str
     lesson: str
     status: LessonStatus
     created_at: datetime
+    difficulty: Difficulty | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
     video_path: str | None = None

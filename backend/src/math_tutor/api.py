@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, model_validator
 from starlette.concurrency import run_in_threadpool
 
-from math_tutor.domain import LessonJob, LessonStatus
+from math_tutor.domain import Difficulty, LessonJob, LessonStatus
 from math_tutor.generation import FROZEN_MODEL, ModelHealth
 from math_tutor.jobs import JobNotFoundError, LessonService, RenderQueueFullError
 from math_tutor.narration import NarrationStatus
@@ -20,6 +20,7 @@ from math_tutor.narration import NarrationStatus
 class CreateLessonRequest(BaseModel):
     lesson: Literal["pythagorean-theorem", "generated-demo"] | None = None
     prompt: str | None = Field(default=None, min_length=1, max_length=2_000)
+    difficulty: Difficulty | None = None
 
     @model_validator(mode="after")
     def require_one_input(self) -> CreateLessonRequest:
@@ -44,6 +45,7 @@ class LessonResponse(BaseModel):
     lesson: str
     status: LessonStatus
     created_at: datetime
+    difficulty: Difficulty | None
     started_at: datetime | None
     completed_at: datetime | None
     video_url: str | None
@@ -67,6 +69,7 @@ def to_response(job: LessonJob) -> LessonResponse:
         lesson=job.lesson,
         status=job.status,
         created_at=job.created_at,
+        difficulty=job.difficulty,
         started_at=job.started_at,
         completed_at=job.completed_at,
         video_url=video_url,
@@ -121,7 +124,12 @@ def create_app(
     )
     def submit_lesson(request: CreateLessonRequest) -> LessonResponse:
         try:
-            return to_response(service.submit(request.prompt or request.lesson or ""))
+            return to_response(
+                service.submit(
+                    request.prompt or request.lesson or "",
+                    difficulty=request.difficulty if request.prompt is not None else None,
+                )
+            )
         except RenderQueueFullError as error:
             raise HTTPException(
                 status_code=503,

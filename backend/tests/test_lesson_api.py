@@ -7,6 +7,7 @@ from time import monotonic, sleep
 from fastapi.testclient import TestClient
 
 from math_tutor.api import create_app
+from math_tutor.domain import Difficulty
 from math_tutor.generation import ModelHealth, ProviderError
 from math_tutor.jobs import JobExecutionError, LessonService, PartialOutcome, RenderOutcome
 from math_tutor.narration import NarrationStatus
@@ -260,6 +261,47 @@ def test_typed_prompt_is_submitted_as_an_asynchronous_lesson(tmp_path: Path) -> 
     assert submitted.status_code == 202
     assert ready["lesson"] == prompt
     assert observed == [prompt]
+
+
+def test_explicit_difficulty_routes_prompt_to_matching_specialist(tmp_path: Path) -> None:
+    default_video = tmp_path / "default.mp4"
+    advanced_video = tmp_path / "advanced.mp4"
+
+    class RecordingRenderer:
+        def __init__(self, name: str, video: Path) -> None:
+            self.name = name
+            self.video = video
+            self.prompts: list[str] = []
+
+        def render(self, job_id: str, lesson: str) -> RenderOutcome:
+            self.prompts.append(lesson)
+            self.video.write_bytes(b"video")
+            return RenderOutcome(self.video, self.name, 0.1, "rendered")
+
+    default = RecordingRenderer("default", default_video)
+    advanced = RecordingRenderer("advanced-specialist", advanced_video)
+    service = LessonService(
+        renderer=default,
+        routed_renderers={Difficulty.ADVANCED: advanced},
+    )
+
+    with TestClient(create_app(service)) as client:
+        submitted = client.post(
+            "/lessons",
+            json={
+                "prompt": "Visualize the Fourier transform solution to the heat equation.",
+                "difficulty": "advanced",
+            },
+        )
+        ready = wait_for_status(client, submitted.json()["id"], "ready")
+
+    assert submitted.status_code == 202
+    assert ready["difficulty"] == "advanced"
+    assert ready["diagnostics"]["renderer"] == "advanced-specialist"
+    assert default.prompts == []
+    assert advanced.prompts == [
+        "Visualize the Fourier transform solution to the heat equation."
+    ]
 
 
 def test_model_health_reports_exact_checkpoint_availability_without_secrets(

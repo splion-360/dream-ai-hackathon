@@ -9,7 +9,7 @@ from threading import BoundedSemaphore, Lock
 from typing import Protocol
 from uuid import uuid4
 
-from math_tutor.domain import LessonJob, LessonStatus, utc_now
+from math_tutor.domain import Difficulty, LessonJob, LessonStatus, utc_now
 from math_tutor.narration import NarrationStatus
 
 _SAFE_JOB_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -94,12 +94,19 @@ class JobStore:
         self._jobs: dict[str, LessonJob] = {}
         self._lock = Lock()
 
-    def create(self, lesson: str, *, narration_requested: bool = False) -> LessonJob:
+    def create(
+        self,
+        lesson: str,
+        *,
+        difficulty: Difficulty | None = None,
+        narration_requested: bool = False,
+    ) -> LessonJob:
         job = LessonJob(
             id=uuid4().hex,
             lesson=lesson,
             status=LessonStatus.QUEUED,
             created_at=utc_now(),
+            difficulty=difficulty,
             narration_status=(
                 NarrationStatus.PENDING
                 if narration_requested
@@ -200,6 +207,7 @@ class LessonService:
         executor: ThreadPoolExecutor | None = None,
         max_pending_jobs: int = 8,
         narration_requested: bool | Callable[[str], bool] = False,
+        routed_renderers: Mapping[Difficulty, Renderer] | None = None,
     ) -> None:
         if max_pending_jobs <= 0:
             raise ValueError("max_pending_jobs must be positive")
@@ -211,8 +219,9 @@ class LessonService:
         )
         self._capacity = BoundedSemaphore(max_pending_jobs)
         self._narration_requested = narration_requested
+        self._routed_renderers = dict(routed_renderers or {})
 
-    def submit(self, lesson: str) -> LessonJob:
+    def submit(self, lesson: str, *, difficulty: Difficulty | None = None) -> LessonJob:
         if not self._capacity.acquire(blocking=False):
             raise RenderQueueFullError("render queue is full")
         narration_requested = (
@@ -222,6 +231,7 @@ class LessonService:
         )
         job = self._store.create(
             lesson,
+            difficulty=difficulty,
             narration_requested=narration_requested,
         )
         try:
@@ -241,7 +251,12 @@ class LessonService:
         try:
             job = self._store.mark_running(job_id)
             try:
-                outcome = self._renderer.render(job_id, job.lesson)
+                renderer = (
+                    self._renderer
+                    if job.difficulty is None
+                    else self._routed_renderers.get(job.difficulty, self._renderer)
+                )
+                outcome = renderer.render(job_id, job.lesson)
             except Exception as error:
                 self._store.mark_failed(job_id, error)
             else:

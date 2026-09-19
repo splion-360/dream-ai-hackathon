@@ -7,7 +7,7 @@ export class HttpLessonTransport implements LessonTransport {
     return this.request("/lessons", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt: input.prompt }),
+      body: JSON.stringify({ prompt: input.prompt, difficulty: input.difficulty }),
     });
   }
 

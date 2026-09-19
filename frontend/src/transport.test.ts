@@ -12,12 +12,18 @@ describe("HttpLessonTransport", () => {
     });
     vi.stubGlobal("fetch", fetch);
 
-    await new HttpLessonTransport().submitLesson({ prompt: "Explain Euler's identity" });
+    await new HttpLessonTransport().submitLesson({
+      prompt: "Explain Euler's identity",
+      difficulty: "advanced",
+    });
 
     expect(fetch).toHaveBeenCalledWith("/lessons", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt: "Explain Euler's identity" }),
+      body: JSON.stringify({
+        prompt: "Explain Euler's identity",
+        difficulty: "advanced",
+      }),
     });
   });
 });
