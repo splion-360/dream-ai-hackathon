@@ -5,7 +5,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/lessons": "http://127.0.0.1:8000",
+      "/lessons": process.env.BACKEND_PROXY_TARGET ?? "http://127.0.0.1:8000",
+      "/model": process.env.BACKEND_PROXY_TARGET ?? "http://127.0.0.1:8000",
     },
   },
   test: {

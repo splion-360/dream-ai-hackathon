@@ -1,0 +1,60 @@
+name: dream-ai-math-tutor
+
+services:
+  backend:
+    build:
+      context: ./backend
+      target: development
+    working_dir: ${PWD:?Run Docker Compose from the repository root}/backend
+    environment:
+      PYTHONPATH: ${PWD:?Run Docker Compose from the repository root}/backend/src
+    env_file:
+      - path: ./backend/.env
+        required: false
+    volumes:
+      # The identical host/container path lets the host Docker daemon mount
+      # per-job scene and artifact paths into short-lived Manim containers.
+      - .:${PWD:?Run Docker Compose from the repository root}
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+    environment:
+      BACKEND_PROXY_TARGET: http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:5173').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  frontend_node_modules:
