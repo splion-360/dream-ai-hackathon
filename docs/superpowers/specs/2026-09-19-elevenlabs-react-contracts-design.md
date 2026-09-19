@@ -108,10 +108,10 @@ The existing response remains backward compatible. The frontend types allow thes
 2. The narration provider synthesizes each segment into a job-scoped artifact directory.
 3. Audio duration is measured and persisted in the audio timeline.
 4. Captions are generated from ordered segment text and measured timing.
-5. The timed renderer and muxer produce the final narrated video.
+5. The muxer fits the silent render to the measured narration duration and produces the final narrated video.
 6. On any narration-stage failure, the silent render remains the successful lesson artifact.
 
-Segment-level synchronization is in scope. Word- and phoneme-level synchronization are not.
+For the hackathon MVP, measured segment timing drives the audio timeline and captions. Visual cues are preserved in the contract for a future cue-aware Manim renderer, but this branch does not retime individual visual events. Word-, phoneme-, and cue-level visual synchronization are not in scope.
 
 ## Ownership boundaries
 

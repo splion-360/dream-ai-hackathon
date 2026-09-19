@@ -128,10 +128,10 @@ class ElevenLabsNarrationProvider:
                         sha256=sha256(response.content).hexdigest(),
                     )
                 )
-            except Exception:
+            except Exception as error:
                 raise ElevenLabsError(
                     f"ElevenLabs synthesis failed for segment '{segment.id}'"
-                ) from None
+                ) from error
 
         return SynthesizedNarration(
             lesson_id=plan.lesson_id,

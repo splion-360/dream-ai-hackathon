@@ -59,7 +59,14 @@ class NarratingRenderer:
                 outcome,
                 silent_video_path=outcome.video_path,
                 narration_status=NarrationStatus.UNAVAILABLE,
-                narration_diagnostics={"narration_error": type(error).__name__},
+                narration_diagnostics={
+                    "narration_error": type(error).__name__,
+                    "narration_error_cause": (
+                        type(error.__cause__).__name__
+                        if error.__cause__ is not None
+                        else None
+                    ),
+                },
             )
         return replace(
             outcome,

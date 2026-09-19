@@ -85,6 +85,7 @@ def test_provider_failure_does_not_expose_api_key(tmp_path: Path) -> None:
 
     assert "intro" in str(captured.value)
     assert "secret-key" not in str(captured.value)
+    assert isinstance(captured.value.__cause__, RuntimeError)
 
 
 def test_provider_rejects_unsafe_segment_id_before_writing(tmp_path: Path) -> None:

@@ -111,5 +111,8 @@ def test_narration_failure_preserves_successful_silent_video(tmp_path: Path) -> 
     assert result.video_path == silent
     assert result.silent_video_path == silent
     assert result.narration_status is NarrationStatus.UNAVAILABLE
-    assert result.narration_diagnostics == {"narration_error": "RuntimeError"}
+    assert result.narration_diagnostics == {
+        "narration_error": "RuntimeError",
+        "narration_error_cause": None,
+    }
     assert "secret-key" not in str(result.narration_diagnostics)

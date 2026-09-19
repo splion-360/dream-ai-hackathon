@@ -88,9 +88,15 @@ def test_assembler_writes_measured_timeline_captions_and_narrated_video(
     timeline = json.loads(bundle.timeline_path.read_text(encoding="utf-8"))
     assert timeline["schema_version"] == "audio-timeline.v1"
     assert [segment["duration_seconds"] for segment in timeline["segments"]] == [1.25, 2.75]
+    assert timeline["segments"][0]["audio_file"] == "../audio/000-intro.mp3"
     assert timeline["total_duration_seconds"] == 4.0
     assert len(commands) == 2
     assert "concat=n=2:v=0:a=1" in commands[0]
+    assert any(
+        "tpad=stop_mode=clone:stop_duration=4.000" in argument
+        for argument in commands[1]
+    )
+    assert "-shortest" in commands[1]
     assert commands[1][-1].endswith("narrated.mp4")
 
 

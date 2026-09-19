@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { LessonResult } from "./App";
+import { App, LessonResult } from "./App";
+import type { CreateLessonInput, LessonTransport } from "./contracts";
 import {
   failedLesson,
   narratedLesson,
@@ -10,6 +11,7 @@ import {
   runningLesson,
   silentFallbackLesson,
 } from "./fixtures";
+import { MockLessonTransport } from "./transport";
 
 describe("LessonResult", () => {
   it.each([
@@ -53,5 +55,40 @@ describe("LessonResult", () => {
     render(<LessonResult lesson={failedLesson} />);
     expect(screen.getByText("Lesson failed")).toBeInTheDocument();
     expect(screen.queryByTestId("lesson-video")).not.toBeInTheDocument();
+  });
+});
+
+describe("App lesson flow", () => {
+  it("submits, polls, and renders a terminal lesson", async () => {
+    const transport = new MockLessonTransport([
+      queuedLesson,
+      runningLesson,
+      narratedLesson,
+    ]);
+    render(<App transport={transport} pollIntervalMs={0} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /create visual lesson/i }));
+
+    expect(await screen.findByText("Narrated lesson ready")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /create visual lesson/i })).toBeEnabled();
+  });
+
+  it("re-enables submission when polling fails", async () => {
+    const transport: LessonTransport = {
+      async submitLesson(_input: CreateLessonInput) {
+        return runningLesson;
+      },
+      async getLesson(_id: string) {
+        throw new Error("polling unavailable");
+      },
+    };
+    render(<App transport={transport} pollIntervalMs={0} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /create visual lesson/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("polling unavailable");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /create visual lesson/i })).toBeEnabled(),
+    );
   });
 });

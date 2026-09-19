@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -79,7 +80,11 @@ class MediaAssembler:
         narrated_video = output_dir / "narrated.mp4"
 
         timeline_path.write_text(
-            json.dumps(_timeline_payload(narration), indent=2, sort_keys=True),
+            json.dumps(
+                _timeline_payload(narration, relative_to=timeline_path.parent),
+                indent=2,
+                sort_keys=True,
+            ),
             encoding="utf-8",
         )
         captions_path.write_text(_webvtt(narration), encoding="utf-8")
@@ -98,6 +103,7 @@ class MediaAssembler:
         )
         self._execute(concat_command, "audio concatenation failed")
 
+        total_duration = sum(segment.duration_seconds for segment in narration.segments)
         mux_command = [
             "ffmpeg",
             "-y",
@@ -105,14 +111,19 @@ class MediaAssembler:
             str(silent_video),
             "-i",
             str(concatenated_audio),
+            "-filter_complex",
+            f"[0:v]tpad=stop_mode=clone:stop_duration={total_duration:.3f}[video]",
             "-map",
-            "0:v:0",
+            "[video]",
             "-map",
             "1:a:0",
             "-c:v",
-            "copy",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
             "-c:a",
             "aac",
+            "-shortest",
             str(narrated_video),
         ]
         self._execute(mux_command, "video muxing failed")
@@ -145,7 +156,11 @@ class MediaAssembler:
             raise MediaAssemblyError(message)
 
 
-def _timeline_payload(narration: SynthesizedNarration) -> dict[str, object]:
+def _timeline_payload(
+    narration: SynthesizedNarration,
+    *,
+    relative_to: Path,
+) -> dict[str, object]:
     return {
         "schema_version": narration.schema_version,
         "lesson_id": narration.lesson_id,
@@ -156,7 +171,9 @@ def _timeline_payload(narration: SynthesizedNarration) -> dict[str, object]:
                 "id": segment.id,
                 "cue": segment.cue,
                 "text": segment.text,
-                "audio_file": f"audio/{segment.audio_path.name}",
+                "audio_file": Path(
+                    os.path.relpath(segment.audio_path, start=relative_to)
+                ).as_posix(),
                 "duration_seconds": segment.duration_seconds,
                 "sha256": segment.sha256,
             }

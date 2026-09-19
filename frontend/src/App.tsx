@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import type { LessonJob, LessonTransport } from "./contracts";
 import { isTerminal } from "./contracts";
@@ -10,28 +10,43 @@ const DEFAULT_PROMPT = "Explain why a² + b² = c² using a visual proof.";
 
 interface AppProps {
   transport?: LessonTransport;
+  pollIntervalMs?: number;
 }
 
-export function App({ transport = defaultTransport }: AppProps) {
+export function App({ transport = defaultTransport, pollIntervalMs = 700 }: AppProps) {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [lesson, setLesson] = useState<LessonJob | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
-  const busy = lesson !== null && !isTerminal(lesson.status);
+  const [polling, setPolling] = useState(false);
+  const mounted = useRef(true);
+  const busy = polling;
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!prompt.trim() || busy) return;
+    setPolling(true);
     setRequestError(null);
     try {
       let next = await transport.submitLesson({ prompt: prompt.trim() });
-      setLesson(next);
+      if (mounted.current) setLesson(next);
       while (!isTerminal(next.status)) {
-        await delay(700);
+        await delay(pollIntervalMs);
         next = await transport.getLesson(next.id);
-        setLesson(next);
+        if (mounted.current) setLesson(next);
       }
     } catch (error) {
-      setRequestError(error instanceof Error ? error.message : "The lesson request failed");
+      if (mounted.current) {
+        setRequestError(error instanceof Error ? error.message : "The lesson request failed");
+      }
+    } finally {
+      if (mounted.current) setPolling(false);
     }
   }
 

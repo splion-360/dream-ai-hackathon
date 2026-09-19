@@ -2,7 +2,7 @@
 
 > **For Codex:** REQUIRED SUB-SKILL: Use mattpocock-skills:implement and mattpocock-skills:tdd to execute this plan task-by-task.
 
-**Goal:** Add independently testable ElevenLabs narration, measured segment timing, captions, silent-video fallback, and a typed React demo surface without depending on Nebius.
+**Goal:** Add independently testable ElevenLabs narration, measured audio/caption timing, silent-video fallback, and a typed React demo surface without depending on Nebius. Visual cue retiming is explicitly deferred.
 
 **Architecture:** Keep provider-neutral narration types and orchestration in Python, isolate ElevenLabs behind an injected HTTP transport, and isolate `ffprobe`/`ffmpeg` behind a media assembler. Extend the existing asynchronous lesson job additively. Put the browser behind a typed transport so the same UI can run against deterministic fixtures or FastAPI.
 
