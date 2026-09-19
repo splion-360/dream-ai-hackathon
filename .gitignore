@@ -219,3 +219,6 @@ __marimo__/
 
 # Generated lesson artifacts
 artifacts/
+
+# Local Git worktrees
+.worktrees/
