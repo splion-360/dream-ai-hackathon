@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from time import monotonic, sleep
 
@@ -13,10 +12,6 @@ from math_tutor.renderer import DEFAULT_MANIM_IMAGE, DockerManimRenderer
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(
-    os.getenv("RUN_MANIM_DOCKER") != "1",
-    reason="set RUN_MANIM_DOCKER=1 to run the real container render",
-)
 def test_known_scene_job_returns_mp4_from_locked_down_container(tmp_path: Path) -> None:
     scene = (
         Path(__file__).parents[1]

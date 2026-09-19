@@ -52,8 +52,6 @@ Every render runs with:
 
 Each job writes under `artifacts/<job-id>/`. Snapshots and SHA-256 hashes preserve the exact scene and validation source. The MP4 stays beneath `output/media/`, while `render.json` records the image, command, timestamps, timeout, cleanup result, exit code, and bounded stdout/stderr needed to reproduce or diagnose the attempt. Failed job responses also include bounded renderer diagnostics. Before a job becomes ready, PyAV decodes a video frame inside the pinned container and the host rejects symlinks or paths escaping the job output directory. Generated artifacts are intentionally ignored by Git.
 
-Configuration can be supplied through the variables documented in [.env.example](.env.example). These variables are read from the process environment; the application does not automatically load the file.
-
 ## Verify
 
 Run the fast suite, lint, and type checking:
@@ -67,5 +65,5 @@ PYTHONPATH=src .venv/bin/mypy src
 Run the real API-to-container-to-MP4 check after pulling the image:
 
 ```bash
-RUN_MANIM_DOCKER=1 .venv/bin/pytest tests/test_docker_renderer_integration.py -q
+.venv/bin/pytest --run-manim-docker tests/test_docker_renderer_integration.py -q
 ```
