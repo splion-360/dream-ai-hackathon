@@ -40,7 +40,7 @@ vllm_image = (
     volumes={"/root/.cache/huggingface": hf_cache},
 )
 @modal.concurrent(max_inputs=4)
-@modal.web_server(port=VLLM_PORT, startup_timeout=15 * 60)
+@modal.web_server(port=VLLM_PORT, startup_timeout=15 * 60, requires_proxy_auth=True)
 def serve() -> None:
     """Start one OpenAI-compatible server with all three named LoRAs preloaded."""
     lora_modules = [

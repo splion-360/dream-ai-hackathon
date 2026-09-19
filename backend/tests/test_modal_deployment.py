@@ -11,6 +11,7 @@ def test_modal_module_does_not_check_the_local_adapter_source_during_remote_impo
 ) -> None:
     installed_packages: list[str] = []
     function_options: dict[str, object] = {}
+    web_server_options: dict[str, object] = {}
 
     class FakeImage:
         @classmethod
@@ -43,7 +44,8 @@ def test_modal_module_does_not_check_the_local_adapter_source_during_remote_impo
         Image=FakeImage,
         Volume=SimpleNamespace(from_name=lambda *_args, **_kwargs: object()),
         concurrent=lambda **_kwargs: lambda function: function,
-        web_server=lambda **_kwargs: lambda function: function,
+        web_server=lambda **kwargs: web_server_options.update(kwargs)
+        or (lambda function: function),
     )
     original_is_dir = Path.is_dir
     monkeypatch.setitem(sys.modules, "modal", fake_modal)
@@ -59,3 +61,4 @@ def test_modal_module_does_not_check_the_local_adapter_source_during_remote_impo
 
     assert installed_packages == ["vllm==0.21.0"]
     assert function_options["max_containers"] == 1
+    assert web_server_options["requires_proxy_auth"] is True
