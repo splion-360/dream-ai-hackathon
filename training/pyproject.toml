@@ -14,7 +14,7 @@ train = [
     "peft>=0.12,<1",
     "safetensors>=0.4,<1",
     "torch>=2.4,<3",
-    "transformers>=4.44,<5",
+    "transformers>=4.51,<5",
 ]
 
 [project.scripts]
@@ -48,4 +48,5 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-packages = ["shared_lora_baseline"]
+mypy_path = ["src"]
+files = ["src"]

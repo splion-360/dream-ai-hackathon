@@ -45,13 +45,12 @@ It performs no heavyweight imports and downloads no weights.
 
 ## GPU Training Command
 
-After provisioning a GPU environment with the optional training dependencies installed:
+After provisioning a GPU environment, run from the repository root:
 
 ```bash
-cd training
-uv sync --extra train --python 3.12
-PYTHONPATH=src uv run python -m shared_lora_baseline.cli train \
-  --config configs/shared_lora_qwen3_4b.json
+uv sync --project training --extra train --python 3.12
+PYTHONPATH=training/src uv run --project training python -m shared_lora_baseline.cli train \
+  --config training/configs/shared_lora_qwen3_4b.json
 ```
 
 Expected artifacts:
@@ -64,6 +63,8 @@ Expected artifacts:
 ## Assumptions
 
 - The target GPU can load Qwen/Qwen3-4B-Instruct-2507 with 4-bit quantization.
+- The model revision is frozen to Hugging Face commit
+  `1b4199c4f36b0cef378bfb12390c18780c18af4c`.
 - The real training JSONL will replace the tiny fixture and remain holdout-disjoint.
 - Evaluation is run separately against the preserved backend holdout.
 - Render success, parse rate, and Manim API validity are evaluation metrics, not training metrics.
@@ -81,6 +82,7 @@ base model. The adapter metadata identifies:
 
 - `condition`: `shared_lora_static_control`
 - `model_id`: `Qwen/Qwen3-4B-Instruct-2507`
+- `model_revision`: `1b4199c4f36b0cef378bfb12390c18780c18af4c`
 - `adapter_id`: `shared-lora-qwen3-4b-manim-v1`
 - `adapter_kind`: `static_shared_lora`
 - `dynamic_adapter_spawning`: `false`

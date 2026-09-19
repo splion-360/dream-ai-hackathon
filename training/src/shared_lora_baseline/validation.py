@@ -17,6 +17,8 @@ class DatasetValidationReport:
     record_count: int
     difficulty_counts: dict[str, int]
     training_ids_sha256: str
+    training_content_sha256: str
+    holdout_content_sha256: str
 
 
 class DatasetValidationError(ValueError):
@@ -27,6 +29,8 @@ def validate_training_dataset(train_path: Path, holdout_path: Path) -> DatasetVa
     errors: list[str] = []
     training_records = _read_jsonl_objects(train_path, label="training", errors=errors)
     holdout_records = _read_jsonl_objects(holdout_path, label="holdout", errors=errors)
+    if not holdout_records:
+        errors.append("holdout dataset must not be empty")
     holdout_ids = _collect_ids(holdout_records, label="holdout", errors=errors)
 
     seen_ids: set[str] = set()
@@ -87,6 +91,8 @@ def validate_training_dataset(train_path: Path, holdout_path: Path) -> DatasetVa
         record_count=len(training_records),
         difficulty_counts=difficulty_counts,
         training_ids_sha256=hashlib.sha256(joined_ids.encode("utf-8")).hexdigest(),
+        training_content_sha256=_sha256_file(train_path),
+        holdout_content_sha256=_sha256_file(holdout_path),
     )
 
 
@@ -132,3 +138,7 @@ def _collect_ids(records: list[dict[str, Any]], *, label: str, errors: list[str]
 def _string_field(record: dict[str, Any], name: str) -> str | None:
     value = record.get(name)
     return value if isinstance(value, str) else None
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()

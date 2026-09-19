@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from shared_lora_baseline.config import TrainingConfig
-from shared_lora_baseline.constants import ADAPTER_ID, ADAPTER_KIND, CONDITION, FROZEN_MODEL_ID
+from shared_lora_baseline.constants import (
+    ADAPTER_ID,
+    ADAPTER_KIND,
+    CONDITION,
+    FROZEN_MODEL_ID,
+    FROZEN_MODEL_REVISION,
+    TRAIN_DEPENDENCY_CONSTRAINTS,
+)
 from shared_lora_baseline.validation import DatasetValidationReport, validate_training_dataset
 
 
@@ -24,6 +30,11 @@ def build_run_plan(config: TrainingConfig) -> RunPlan:
     return RunPlan(metadata=metadata, redacted_text=redacted_text)
 
 
+def add_runtime_versions(plan: RunPlan, versions: dict[str, str]) -> RunPlan:
+    metadata = {**plan.metadata, "runtime_versions": dict(sorted(versions.items()))}
+    return RunPlan(metadata=metadata, redacted_text=_render_plan(metadata))
+
+
 def write_run_metadata(plan: RunPlan, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(plan.metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -35,15 +46,19 @@ def _metadata(config: TrainingConfig, report: DatasetValidationReport) -> dict[s
         "adapter_id": ADAPTER_ID,
         "adapter_kind": ADAPTER_KIND,
         "model_id": FROZEN_MODEL_ID,
+        "model_revision": FROZEN_MODEL_REVISION,
         "dynamic_adapter_spawning": False,
         "learned_router": False,
-        "created_at_utc": datetime(2026, 9, 19, tzinfo=UTC).isoformat(),
+        "dependency_constraints": dict(sorted(TRAIN_DEPENDENCY_CONSTRAINTS.items())),
+        "runtime_versions": "not_loaded_dry_run",
         "dataset": {
             "train_path": _redact_path(config.train_path),
             "holdout_path": _redact_path(config.holdout_path),
             "record_count": report.record_count,
             "difficulty_counts": dict(sorted(report.difficulty_counts.items())),
             "training_ids_sha256": report.training_ids_sha256,
+            "training_content_sha256": report.training_content_sha256,
+            "holdout_content_sha256": report.holdout_content_sha256,
         },
         "training": {
             "seed": config.seed,
@@ -72,6 +87,7 @@ def _render_plan(metadata: dict[str, Any]) -> str:
         "Shared-LoRA static control dry run",
         f"condition: {metadata['condition']}",
         f"model_id: {metadata['model_id']}",
+        f"model_revision: {metadata['model_revision']}",
         f"adapter_id: {metadata['adapter_id']}",
         "dynamic_adapter_spawning: false",
         "learned_router: false",
@@ -81,6 +97,9 @@ def _render_plan(metadata: dict[str, Any]) -> str:
         f"  record_count: {metadata['dataset']['record_count']}",
         f"  difficulty_counts: {metadata['dataset']['difficulty_counts']}",
         f"  training_ids_sha256: {metadata['dataset']['training_ids_sha256']}",
+        f"  training_content_sha256: {metadata['dataset']['training_content_sha256']}",
+        f"  holdout_content_sha256: {metadata['dataset']['holdout_content_sha256']}",
+        f"runtime_versions: {metadata['runtime_versions']}",
         "training:",
     ]
     training = metadata["training"]
@@ -116,7 +135,7 @@ def _redact_path(path: Path) -> str:
 
 
 def config_asdict(config: TrainingConfig) -> dict[str, Any]:
-    value = asdict(config)
+    value: dict[str, Any] = asdict(config)
     value["target_modules"] = list(config.target_modules)
     for key in ("train_path", "holdout_path", "output_dir", "metadata_path"):
         value[key] = str(value[key])

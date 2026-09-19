@@ -100,3 +100,53 @@ def test_validation_rejects_duplicate_unstable_and_holdout_ids(tmp_path: Path) -
     assert "invalid id format: bad id" in message
     assert "invalid difficulty for train-advanced-001: expert" in message
     assert "training IDs overlap holdout IDs: eval-foundational-001" in message
+
+
+def test_validation_rejects_empty_holdout(tmp_path: Path) -> None:
+    train_path = tmp_path / "train.jsonl"
+    holdout_path = tmp_path / "holdout.jsonl"
+    write_jsonl(
+        train_path,
+        [
+            valid_record("train-foundational-001", "foundational"),
+            valid_record("train-intermediate-001", "intermediate"),
+            valid_record("train-advanced-001", "advanced"),
+        ],
+    )
+    holdout_path.write_text("", encoding="utf-8")
+
+    with pytest.raises(DatasetValidationError, match="holdout dataset must not be empty"):
+        validate_training_dataset(train_path, holdout_path)
+
+
+def test_dataset_fingerprints_change_with_content_and_order(tmp_path: Path) -> None:
+    train_path = tmp_path / "train.jsonl"
+    holdout_path = tmp_path / "holdout.jsonl"
+    records = [
+        valid_record("train-foundational-001", "foundational"),
+        valid_record("train-intermediate-001", "intermediate"),
+        valid_record("train-advanced-001", "advanced"),
+    ]
+    write_jsonl(train_path, records)
+    write_jsonl(
+        holdout_path,
+        [
+            {
+                "id": "eval-foundational-001",
+                "difficulty": "foundational",
+                "topic": "fractions",
+                "prompt": "Holdout prompt.",
+            }
+        ],
+    )
+    first = validate_training_dataset(train_path, holdout_path)
+
+    write_jsonl(train_path, list(reversed(records)))
+    reordered = validate_training_dataset(train_path, holdout_path)
+    records[0]["prompt"] = "Changed training prompt."
+    write_jsonl(train_path, records)
+    changed = validate_training_dataset(train_path, holdout_path)
+
+    assert first.training_content_sha256 != reordered.training_content_sha256
+    assert first.training_content_sha256 != changed.training_content_sha256
+    assert first.holdout_content_sha256 == reordered.holdout_content_sha256

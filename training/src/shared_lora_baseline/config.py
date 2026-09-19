@@ -35,7 +35,7 @@ def load_config(path: Path) -> TrainingConfig:
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ConfigError("config root must be a JSON object")
-    base_dir = Path.cwd()
+    base_dir = path.resolve().parent
     return parse_config(raw, base_dir=base_dir)
 
 

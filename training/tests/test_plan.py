@@ -86,6 +86,10 @@ def test_dry_run_plan_is_redacted_deterministic_and_machine_readable(tmp_path: P
     assert metadata["model_id"] == "Qwen/Qwen3-4B-Instruct-2507"
     assert metadata["dynamic_adapter_spawning"] is False
     assert metadata["learned_router"] is False
+    assert metadata["model_revision"] == "1b4199c4f36b0cef378bfb12390c18780c18af4c"
+    assert metadata["runtime_versions"] == "not_loaded_dry_run"
+    assert len(metadata["dataset"]["training_content_sha256"]) == 64
+    assert len(metadata["dataset"]["holdout_content_sha256"]) == 64
     assert metadata["dataset"]["difficulty_counts"] == {
         "advanced": 1,
         "foundational": 1,
