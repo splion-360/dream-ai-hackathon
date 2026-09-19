@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 from math_tutor.generated_lesson import GeneratedLessonError, GeneratedLessonPipeline
 from math_tutor.generation import GenerationConfig, NebiusTokenFactoryClient, ProviderError
+from math_tutor.jobs import is_safe_job_id
 from math_tutor.renderer import (
     DEFAULT_MANIM_IMAGE,
     DockerManimRenderer,
@@ -102,6 +103,8 @@ def validate_evaluation_slice(
     ids = [example.id for example in examples]
     if len(ids) != len(set(ids)):
         raise DatasetValidationError("evaluation identifiers must be unique")
+    if any(not is_safe_job_id(identifier) for identifier in ids):
+        raise DatasetValidationError("evaluation identifiers must be safe artifact identifiers")
     overlap = set(ids) & training_ids
     if overlap:
         raise DatasetValidationError(
@@ -111,8 +114,7 @@ def validate_evaluation_slice(
     missing = [difficulty for difficulty in DIFFICULTIES if counts[difficulty] < 5]
     if missing:
         raise DatasetValidationError(
-            "evaluation slice requires at least five examples per difficulty: "
-            + ", ".join(missing)
+            "evaluation slice requires at least five examples per difficulty: " + ", ".join(missing)
         )
     if any(example.split != "evaluation" for example in examples):
         raise DatasetValidationError("every held-out example must use split='evaluation'")
@@ -143,17 +145,17 @@ def aggregate_metrics(attempts: Sequence[AttemptRecord]) -> dict[str, object]:
     }
 
 
-def _summarize(attempts: Sequence[AttemptRecord]) -> dict[str, int | float]:
+def _summarize(attempts: Sequence[AttemptRecord]) -> dict[str, int | float | None]:
     count = len(attempts)
     if count == 0:
         return {
             "attempts": 0,
-            "extraction_success_rate": 0.0,
-            "parse_success_rate": 0.0,
-            "render_pass_at_1": 0.0,
-            "timeout_rate": 0.0,
-            "mean_generation_latency_seconds": 0.0,
-            "mean_render_latency_seconds": 0.0,
+            "extraction_success_rate": None,
+            "parse_success_rate": None,
+            "render_pass_at_1": None,
+            "timeout_rate": None,
+            "mean_generation_latency_seconds": None,
+            "mean_render_latency_seconds": None,
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,
@@ -164,9 +166,7 @@ def _summarize(attempts: Sequence[AttemptRecord]) -> dict[str, int | float]:
         "parse_success_rate": sum(a.parse_success for a in attempts) / count,
         "render_pass_at_1": sum(a.render_success for a in attempts) / count,
         "timeout_rate": sum(a.timed_out for a in attempts) / count,
-        "mean_generation_latency_seconds": fmean(
-            a.generation_latency_seconds for a in attempts
-        ),
+        "mean_generation_latency_seconds": fmean(a.generation_latency_seconds for a in attempts),
         "mean_render_latency_seconds": fmean(a.render_latency_seconds for a in attempts),
         "prompt_tokens": sum(a.prompt_tokens for a in attempts),
         "completion_tokens": sum(a.completion_tokens for a in attempts),
@@ -239,6 +239,8 @@ def run_evaluation(
                 failure_stage = str(error.diagnostics.get("failure_stage", "validation"))
             except ProviderError:
                 failure_stage = "provider"
+            except Exception:
+                failure_stage = "error"
 
             job_dir = attempts_dir / example.id
             generation = _read_json_if_present(job_dir / "generation.json")

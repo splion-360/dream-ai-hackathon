@@ -13,13 +13,7 @@ from math_tutor.renderer import DEFAULT_MANIM_IMAGE, DockerManimRenderer
 
 @pytest.mark.integration
 def test_known_scene_job_returns_mp4_from_locked_down_container(tmp_path: Path) -> None:
-    scene = (
-        Path(__file__).parents[1]
-        / "src"
-        / "math_tutor"
-        / "scenes"
-        / "pythagorean_theorem.py"
-    )
+    scene = Path(__file__).parents[1] / "src" / "math_tutor" / "scenes" / "pythagorean_theorem.py"
     renderer = DockerManimRenderer(
         artifact_root=tmp_path / "artifacts",
         scene_path=scene,

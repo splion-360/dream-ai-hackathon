@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -11,14 +12,12 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from math_tutor.jobs import JobExecutionError, RenderOutcome
+from math_tutor.jobs import JobExecutionError, RenderOutcome, is_safe_job_id
 
 CommandRunner = Callable[[list[str], float], subprocess.CompletedProcess[str]]
 DEFAULT_MANIM_IMAGE = (
-    "manimcommunity/manim@sha256:"
-    "ab5ad56cf685d89da96e5d459e0cde3743fbdf2141be4dcff6c26566b5ca3191"
+    "manimcommunity/manim@sha256:ab5ad56cf685d89da96e5d459e0cde3743fbdf2141be4dcff6c26566b5ca3191"
 )
-_SAFE_JOB_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _DIGEST_PINNED_IMAGE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
 _LOG_LIMIT = 32_000
 
@@ -73,7 +72,7 @@ class DockerManimRenderer:
         return self.render_source(job_id, source, "PythagoreanTheorem")
 
     def render_source(self, job_id: str, source: str, scene_class: str) -> RenderOutcome:
-        if not _SAFE_JOB_ID.fullmatch(job_id):
+        if not is_safe_job_id(job_id):
             raise RenderFailed("job id is not safe for an artifact path or container name")
         if not scene_class.isidentifier():
             raise RenderFailed("scene class is not a valid Python identifier")
@@ -272,6 +271,10 @@ class DockerManimRenderer:
             "1g",
             "--pids-limit",
             "256",
+            "--ulimit",
+            "fsize=536870912",
+            "--user",
+            f"{os.getuid()}:{os.getgid()}",
             "--read-only",
             "--cap-drop",
             "ALL",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -9,6 +10,12 @@ from typing import Protocol
 from uuid import uuid4
 
 from math_tutor.domain import LessonJob, LessonStatus, utc_now
+
+_SAFE_JOB_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def is_safe_job_id(value: str) -> bool:
+    return _SAFE_JOB_ID.fullmatch(value) is not None
 
 
 @dataclass(frozen=True)
