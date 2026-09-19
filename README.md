@@ -62,7 +62,7 @@ With narration enabled, `narration_status` progresses from `pending` to `ready` 
 - `captions_url`: measured-timing WebVTT captions when narration succeeds;
 - `explanation` and `generated_code`: nullable handoff fields for the Nebius generation pipeline.
 
-Narration is intentionally all-or-nothing for the MVP. ElevenLabs, duration-probe, caption, or mux failures are sanitized and recorded in diagnostics while the lesson remains `ready` with its silent video. Segment durations come from `ffprobe`, not text-length estimates, and drive the audio timeline and captions. Visual cue names are retained for a future cue-aware Manim renderer; this branch fits the overall video to the narration duration but does not retime individual visual events. Word-, phoneme-, and cue-level visual alignment are outside this hackathon slice.
+Narration is intentionally all-or-nothing for the MVP. ElevenLabs, duration-probe, caption, or mux failures are sanitized and recorded in diagnostics while the lesson remains `ready` with its silent video. Segment durations come from `ffprobe`, not text-length estimates, and drive the audio timeline and captions. Visual cue names are retained for a future cue-aware Manim renderer; this branch preserves the full silent render, pads shorter narration with silence, and does not retime individual visual events. Word-, phoneme-, and cue-level visual alignment are outside this hackathon slice.
 
 ## Run the frontend
 

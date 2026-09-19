@@ -103,7 +103,6 @@ class MediaAssembler:
         )
         self._execute(concat_command, "audio concatenation failed")
 
-        total_duration = sum(segment.duration_seconds for segment in narration.segments)
         mux_command = [
             "ffmpeg",
             "-y",
@@ -112,15 +111,13 @@ class MediaAssembler:
             "-i",
             str(concatenated_audio),
             "-filter_complex",
-            f"[0:v]tpad=stop_mode=clone:stop_duration={total_duration:.3f}[video]",
+            "[1:a]apad[audio]",
             "-map",
-            "[video]",
+            "0:v:0",
             "-map",
-            "1:a:0",
+            "[audio]",
             "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
+            "copy",
             "-c:a",
             "aac",
             "-shortest",

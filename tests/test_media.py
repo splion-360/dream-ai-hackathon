@@ -92,10 +92,9 @@ def test_assembler_writes_measured_timeline_captions_and_narrated_video(
     assert timeline["total_duration_seconds"] == 4.0
     assert len(commands) == 2
     assert "concat=n=2:v=0:a=1" in commands[0]
-    assert any(
-        "tpad=stop_mode=clone:stop_duration=4.000" in argument
-        for argument in commands[1]
-    )
+    assert "[1:a]apad[audio]" in commands[1]
+    assert "0:v:0" in commands[1]
+    assert "copy" in commands[1]
     assert "-shortest" in commands[1]
     assert commands[1][-1].endswith("narrated.mp4")
 
