@@ -32,6 +32,8 @@ export function App({ transport = defaultTransport, pollIntervalMs = 700 }: AppP
   const [lesson, setLesson] = useState<LessonJob | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [polling, setPolling] = useState(false);
+  const [artifactMode, setArtifactMode] = useState<"view" | "code">("view");
+  const [captionsEnabled, setCaptionsEnabled] = useState(true);
   const mounted = useRef(true);
   const busy = polling;
 
@@ -121,10 +123,43 @@ export function App({ transport = defaultTransport, pollIntervalMs = 700 }: AppP
             <StatusBadge lesson={lesson} busy={busy} />
           </div>
 
-          <VideoStage lesson={lesson} busy={busy} />
+          <div className="artifact-toolbar" aria-label="Lesson artifact controls">
+            <div className="segmented-control" role="group" aria-label="Choose lesson artifact">
+              <button
+                type="button"
+                className={artifactMode === "view" ? "active" : ""}
+                onClick={() => setArtifactMode("view")}
+              >
+                View
+              </button>
+              <button
+                type="button"
+                className={artifactMode === "code" ? "active" : ""}
+                onClick={() => setArtifactMode("code")}
+              >
+                {"</>"}
+              </button>
+            </div>
+            <label className="caption-toggle">
+              <input
+                type="checkbox"
+                checked={captionsEnabled}
+                disabled={!lesson?.captions_url || artifactMode !== "view"}
+                onChange={(event) => setCaptionsEnabled(event.target.checked)}
+              />
+              Captions
+            </label>
+          </div>
+
+          <VideoStage
+            lesson={lesson}
+            busy={busy}
+            mode={artifactMode}
+            captionsEnabled={captionsEnabled}
+          />
 
           <div className="video-controls-strip">
-            <span>Captions enabled</span>
+            <span>{artifactMode === "code" ? "Generated Manim source" : artifactStatus(lesson, captionsEnabled)}</span>
             <span>{lesson ? narrationLabel(lesson.narration_status) : "Narration pending"}</span>
           </div>
 
@@ -138,6 +173,9 @@ export function App({ transport = defaultTransport, pollIntervalMs = 700 }: AppP
 }
 
 function LessonResult({ lesson }: { lesson: LessonJob }) {
+  const [artifactMode, setArtifactMode] = useState<"view" | "code">("view");
+  const [captionsEnabled, setCaptionsEnabled] = useState(true);
+
   return (
     <section className="standalone-result">
       <div className="video-panel-head">
@@ -147,20 +185,63 @@ function LessonResult({ lesson }: { lesson: LessonJob }) {
         </div>
         <StatusBadge lesson={lesson} busy={false} />
       </div>
-      <VideoStage lesson={lesson} busy={lesson.status === "queued" || lesson.status === "running"} />
+      <div className="artifact-toolbar" aria-label="Lesson artifact controls">
+        <div className="segmented-control" role="group" aria-label="Choose lesson artifact">
+          <button
+            type="button"
+            className={artifactMode === "view" ? "active" : ""}
+            onClick={() => setArtifactMode("view")}
+          >
+            View
+          </button>
+          <button
+            type="button"
+            className={artifactMode === "code" ? "active" : ""}
+            onClick={() => setArtifactMode("code")}
+          >
+            {"</>"}
+          </button>
+        </div>
+        <label className="caption-toggle">
+          <input
+            type="checkbox"
+            checked={captionsEnabled}
+            disabled={!lesson.captions_url || artifactMode !== "view"}
+            onChange={(event) => setCaptionsEnabled(event.target.checked)}
+          />
+          Captions
+        </label>
+      </div>
+      <VideoStage
+        lesson={lesson}
+        busy={lesson.status === "queued" || lesson.status === "running"}
+        mode={artifactMode}
+        captionsEnabled={captionsEnabled}
+      />
       {lesson.status !== "queued" && lesson.status !== "running" && <SupportTabs lesson={lesson} />}
     </section>
   );
 }
 
-function VideoStage({ lesson, busy }: { lesson: LessonJob | null; busy: boolean }) {
+function VideoStage({
+  lesson,
+  busy,
+  mode,
+  captionsEnabled,
+}: {
+  lesson: LessonJob | null;
+  busy: boolean;
+  mode: "view" | "code";
+  captionsEnabled: boolean;
+}) {
   if (!lesson) return <EmptyVideo />;
   if (lesson.status === "queued" || lesson.status === "running") {
     return <GeneratingVideo lesson={lesson} busy={busy} />;
   }
+  if (mode === "code") return <CodeStage lesson={lesson} />;
   if (lesson.status === "failed") return <FailedVideo lesson={lesson} />;
   if (lesson.status === "partial") return <PartialVideo lesson={lesson} />;
-  return <ReadyVideo lesson={lesson} />;
+  return <ReadyVideo lesson={lesson} captionsEnabled={captionsEnabled} />;
 }
 
 function EmptyVideo() {
@@ -177,29 +258,33 @@ function EmptyVideo() {
 }
 
 function GeneratingVideo({ lesson }: { lesson: LessonJob; busy: boolean }) {
-  const progress = lesson.status === "queued" ? 18 : 68;
+  const progress = truthfulProgress(lesson);
   const heading = lesson.status === "queued"
     ? "Queued for a render worker"
     : "Rendering your visual lesson";
+  const phase = lesson.status === "queued" ? "Queued" : "Rendering";
 
   return (
     <div className="video-stage video-generating">
       <div className="generation-topline">
         <span>{lesson.lesson}</span>
-        <span>{progress}%</span>
+        <span>{progress === null ? phase : `${progress}%`}</span>
       </div>
       <div className="generation-center">
         <span className="spinner-mark">∑</span>
         <h3>{heading}</h3>
-        <div className="progress-track">
-          <span style={{ width: `${progress}%` }} />
+        <div className={progress === null ? "progress-track is-indeterminate" : "progress-track"}>
+          <span style={progress === null ? undefined : { width: `${progress}%` }} />
         </div>
       </div>
       <div className="inline-steps">
         {progressSteps.map((step, index) => {
           const threshold = [10, 32, 68, 90][index] ?? 100;
           return (
-            <div key={step} className={progress >= threshold ? "is-complete" : ""}>
+            <div
+              key={step}
+              className={progress !== null && progress >= threshold ? "is-complete" : ""}
+            >
               <span />
               <p>{index + 1}. {step}</p>
             </div>
@@ -210,14 +295,20 @@ function GeneratingVideo({ lesson }: { lesson: LessonJob; busy: boolean }) {
   );
 }
 
-function ReadyVideo({ lesson }: { lesson: LessonJob }) {
+function ReadyVideo({
+  lesson,
+  captionsEnabled,
+}: {
+  lesson: LessonJob;
+  captionsEnabled: boolean;
+}) {
   const playableVideo = lesson.video_url ?? lesson.silent_video_url;
 
   return (
     <div className="video-stage video-ready">
       {playableVideo ? (
         <video data-testid="lesson-video" src={playableVideo} controls preload="metadata">
-          {lesson.captions_url && (
+          {captionsEnabled && lesson.captions_url && (
             <track
               title="English captions"
               kind="captions"
@@ -231,11 +322,18 @@ function ReadyVideo({ lesson }: { lesson: LessonJob }) {
       ) : (
         <div className="video-placeholder">Video asset unavailable</div>
       )}
-      <span className="scene-label">Scene 03 · visual proof</span>
-      {lesson.captions_url && <span className="caption-preview">Synchronized captions</span>}
-      <span className={`video-state-pill video-state-${lesson.narration_status}`}>
-        {narrationLabel(lesson.narration_status)}
-      </span>
+    </div>
+  );
+}
+
+function CodeStage({ lesson }: { lesson: LessonJob }) {
+  return (
+    <div className="video-stage code-stage">
+      <div className="code-stage-head">
+        <span>Generated Manim · Python</span>
+        <span>{lesson.generated_code ? "Ready" : "Waiting for source"}</span>
+      </div>
+      <pre><code>{lesson.generated_code ?? "# Manim source will appear here"}</code></pre>
     </div>
   );
 }
@@ -261,40 +359,25 @@ function FailedVideo({ lesson }: { lesson: LessonJob }) {
 function SupportTabs({ lesson }: { lesson: LessonJob | null }) {
   return (
     <section className="support-panel">
-      <div className="support-tabs" role="tablist" aria-label="Lesson details">
-        <button type="button" className="active">Explanation</button>
-        <button type="button">Generated Manim Code</button>
-        <button type="button">Diagnostics / Adapter Routing</button>
-      </div>
       <div className="support-content">
         {lesson ? (
-          <article className="explanation-layout">
-            <div>
+          <article className="lesson-details-grid">
+            <section className="detail-card">
               <p className="section-kicker">Mathematical intuition</p>
               <h2>Explanation</h2>
               <p>
                 {lesson.explanation ?? `Generated visual lesson for: ${lesson.lesson}`}
               </p>
-            </div>
-            <div className="proof-list">
-              <ProofStep number="01" title="Reasoning target" formula={lesson.lesson}>
-                Convert the prompt into a concise mathematical objective that can be explained visually.
-              </ProofStep>
-              <ProofStep number="02" title="Scene construction" formula="Scene → Shapes → Transformations">
-                Use Manim code to build the animation as composable visual steps.
-              </ProofStep>
-              <ProofStep number="03" title="Narration package" formula="Video + Captions + Voice">
-                Attach synchronized captions and narration when ElevenLabs output is available.
-              </ProofStep>
-              <details className="code-panel">
-                <summary>Generated Manim · Python</summary>
-                <pre><code>{lesson.generated_code ?? "# Manim source will appear here"}</code></pre>
-              </details>
-            </div>
+            </section>
+            <section className="detail-card adapter-card">
+              <p className="section-kicker">Adapter routing</p>
+              <h2>Dynamic LoRA trace</h2>
+              <AdapterRouting diagnostics={lesson.diagnostics} />
+            </section>
           </article>
         ) : (
           <div className="awaiting-content">
-            Generate a visual lesson to unlock its explanation, code, and adapter diagnostics.
+            Generate a visual lesson to unlock its explanation and adapter diagnostics.
           </div>
         )}
       </div>
@@ -302,26 +385,26 @@ function SupportTabs({ lesson }: { lesson: LessonJob | null }) {
   );
 }
 
-function ProofStep({
-  number,
-  title,
-  formula,
-  children,
-}: {
-  number: string;
-  title: string;
-  formula: string;
-  children: React.ReactNode;
-}) {
+function AdapterRouting({ diagnostics }: { diagnostics: Record<string, unknown> }) {
+  const adapter = readText(diagnostics, ["adapter", "adapter_id", "selected_adapter"]) ?? "Pending";
+  const route = readText(diagnostics, ["route", "router_path", "topic"]) ?? "No route reported yet";
+  const confidence = readPercent(diagnostics, ["confidence", "router_confidence"]);
+
   return (
-    <section className="proof-step">
-      <span>{number}</span>
+    <div className="adapter-routing">
       <div>
-        <h3>{title}</h3>
-        <p>{children}</p>
-        <code>{formula}</code>
+        <span>Selected adapter</span>
+        <strong>{adapter}</strong>
       </div>
-    </section>
+      <div>
+        <span>Route</span>
+        <strong>{route}</strong>
+      </div>
+      <div>
+        <span>Confidence</span>
+        <strong>{confidence === null ? "Pending" : `${confidence}%`}</strong>
+      </div>
+    </div>
   );
 }
 
@@ -353,6 +436,34 @@ function narrationLabel(status: NarrationStatus) {
   if (status === "pending") return "Narration pending";
   if (status === "unavailable") return "Silent fallback active";
   return "Narration not requested";
+}
+
+function artifactStatus(lesson: LessonJob | null, captionsEnabled: boolean) {
+  if (!lesson) return "Video appears here";
+  if (!lesson.captions_url) return "Captions unavailable";
+  return captionsEnabled ? "Captions on" : "Captions off";
+}
+
+function truthfulProgress(lesson: LessonJob) {
+  return readPercent(lesson.diagnostics, ["progress_percent", "progress"]);
+}
+
+function readText(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return null;
+}
+
+function readPercent(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value !== "number" || Number.isNaN(value)) continue;
+    const normalized = value > 0 && value <= 1 ? value * 100 : value;
+    if (normalized >= 0 && normalized <= 100) return Math.round(normalized);
+  }
+  return null;
 }
 
 const delay = (milliseconds: number) =>
