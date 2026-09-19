@@ -83,12 +83,19 @@ From the repository root, after authenticating the Modal CLI, deploy it with:
 modal deploy modal/qwen3_lora_vllm.py
 ```
 
-Copy the resulting URL (including `/v1`) into the backend environment. Add a bearer token only
-when the Modal endpoint requires one; leave it blank for an unauthenticated endpoint.
+Copy the resulting URL (including `/v1`) into the backend environment. This deployment requires
+Modal proxy authentication. Create a workspace proxy token, then set
+`MODAL_VLLM_API_KEY` to the returned `Modal-Key`, a period, and the returned `Modal-Secret`
+(or equivalently use the returned `Authorization` value without its `Bearer ` prefix). Keep it in
+an ignored local environment file or secret manager; never commit it.
 
 ```bash
-MODAL_VLLM_BASE_URL=https://YOUR-WORKSPACE--dream-ai-qwen3-lora-serve.modal.direct/v1
-MODAL_VLLM_API_KEY=
+modal workspace proxy-tokens create --json
+```
+
+```bash
+MODAL_VLLM_BASE_URL=https://YOUR-WORKSPACE--dream-ai-qwen3-lora-serve.modal.run/v1
+MODAL_VLLM_API_KEY=wk-...ws-...
 ```
 
 With `MODAL_VLLM_BASE_URL` set, jobs submitted with `difficulty` equal to `foundational`,
@@ -107,8 +114,9 @@ curl "$MODAL_VLLM_BASE_URL/chat/completions" \
   -d '{"model":"foundational","messages":[{"role":"user","content":"Reply with OK."}],"max_tokens":8}'
 ```
 
-Do not claim the endpoint is live until both commands return successfully. Modal authentication is
-account-specific; run `modal setup` if `modal deploy` reports missing credentials.
+Do not claim the endpoint is live until both commands return successfully. An unauthenticated
+request should return `401` before it reaches the GPU. Modal authentication is account-specific;
+run `modal setup` if `modal deploy` reports missing credentials.
 
 The status progresses through `queued` and `running` to a terminal `ready`, `partial`, or `failed` state. `partial` represents an incomplete lesson that still retains useful artifacts or diagnostics. A ready response contains a `video_url`; open that URL or download it with `curl`. When all render capacity is occupied, new submissions receive `503 Service Unavailable` with `Retry-After: 1` instead of accumulating an unbounded queue.
 
