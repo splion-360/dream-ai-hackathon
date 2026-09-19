@@ -8,6 +8,7 @@ import pytest
 from math_tutor.generation import (
     VOICEOVER_SYSTEM_PROMPT,
     GenerationConfig,
+    ModalVllmClient,
     NebiusTokenFactoryClient,
     ProviderError,
 )
@@ -153,3 +154,51 @@ def test_malformed_success_response_is_a_sanitized_provider_error() -> None:
 
     with pytest.raises(ProviderError, match="malformed response"):
         client.generate("Prompt")
+
+
+def test_modal_vllm_sends_selected_adapter_to_openai_compatible_endpoint() -> None:
+    observed: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed["authorization"] = request.headers.get("authorization")
+        observed["payload"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-modal-123",
+                "model": "advanced",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": "```python\npass\n```"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 5, "total_tokens": 9},
+            },
+        )
+
+    config = GenerationConfig(model="advanced")
+    client = ModalVllmClient(
+        api_key="modal-token",
+        config=config,
+        base_url="https://workspace--qwen.modal.direct/v1",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.generate("Explain a derivative visually.")
+
+    assert observed == {
+        "authorization": "Bearer modal-token",
+        "payload": {
+            "model": "advanced",
+            "messages": [
+                {"role": "system", "content": config.system_prompt},
+                {"role": "user", "content": "Explain a derivative visually."},
+            ],
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "max_tokens": 4096,
+            "seed": 42,
+        },
+    }
+    assert result.model == "advanced"

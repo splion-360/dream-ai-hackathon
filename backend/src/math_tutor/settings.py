@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     elevenlabs_api_key: SecretStr | None = None
     nebius_base_url: str = "https://api.tokenfactory.nebius.com/v1"
     nebius_model: str = DEMO_INFERENCE_MODEL
+    modal_vllm_base_url: str | None = None
+    modal_vllm_api_key: SecretStr | None = None
+    modal_vllm_timeout_seconds: float = Field(default=120, gt=0)
     elevenlabs_voice_id: str = "Xb7hH8MSUJpSbSDYk0k2"
     artifact_root: Path = Path("artifacts")
     render_timeout_seconds: float = Field(default=90, gt=0)

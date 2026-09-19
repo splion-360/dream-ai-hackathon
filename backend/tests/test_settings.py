@@ -33,3 +33,14 @@ def test_get_settings_returns_one_cached_settings_object(monkeypatch) -> None:
     second = get_settings()
 
     assert first is second
+
+
+def test_settings_loads_optional_modal_vllm_connection(monkeypatch) -> None:
+    monkeypatch.setenv("MODAL_VLLM_BASE_URL", "https://workspace--qwen.modal.direct/v1")
+    monkeypatch.setenv("MODAL_VLLM_API_KEY", "modal-secret")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.modal_vllm_base_url == "https://workspace--qwen.modal.direct/v1"
+    assert settings.modal_vllm_api_key == SecretStr("modal-secret")
+    assert "modal-secret" not in repr(settings)
