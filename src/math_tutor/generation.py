@@ -169,3 +169,23 @@ class NebiusTokenFactoryClient:
 
     def close(self) -> None:
         self._client.close()
+
+
+class UnavailableModelClient:
+    def __init__(self, config: GenerationConfig, reason: str) -> None:
+        self.config = config
+        self._reason = reason
+
+    def generate(self, prompt: str) -> GenerationResult:
+        raise ProviderError(self._reason)
+
+    def health(self) -> ModelHealth:
+        return ModelHealth(
+            reachable=False,
+            model=self.config.model,
+            model_available=False,
+            error=self._reason,
+        )
+
+    def close(self) -> None:
+        return None

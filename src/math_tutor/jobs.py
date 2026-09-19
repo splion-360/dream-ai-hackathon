@@ -38,8 +38,24 @@ class PartialOutcome:
     error: str
 
 
-class Renderer(Protocol):
+class JobRenderer(Protocol):
     def render(self, job_id: str) -> RenderOutcome | PartialOutcome: ...
+
+
+class Renderer(Protocol):
+    def render(self, job_id: str, lesson: str) -> RenderOutcome | PartialOutcome: ...
+
+
+class DispatchingRenderer:
+    def __init__(self, renderers: Mapping[str, JobRenderer]) -> None:
+        self._renderers = dict(renderers)
+
+    def render(self, job_id: str, lesson: str) -> RenderOutcome | PartialOutcome:
+        try:
+            renderer = self._renderers[lesson]
+        except KeyError as error:
+            raise JobExecutionError(f"no renderer configured for lesson '{lesson}'") from error
+        return renderer.render(job_id)
 
 
 class JobNotFoundError(KeyError):
@@ -179,9 +195,9 @@ class LessonService:
 
     def _run(self, job_id: str) -> None:
         try:
-            self._store.mark_running(job_id)
+            job = self._store.mark_running(job_id)
             try:
-                outcome = self._renderer.render(job_id)
+                outcome = self._renderer.render(job_id, job.lesson)
             except Exception as error:
                 self._store.mark_failed(job_id, error)
             else:
