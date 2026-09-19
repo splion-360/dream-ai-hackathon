@@ -4,7 +4,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
-from threading import Lock
+from threading import BoundedSemaphore, Lock
 from typing import Protocol
 from uuid import uuid4
 
@@ -19,11 +19,23 @@ class RenderOutcome:
     logs: str
 
 
+@dataclass(frozen=True)
+class PartialOutcome:
+    renderer: str
+    elapsed_seconds: float
+    logs: str
+    error: str
+
+
 class Renderer(Protocol):
-    def render(self, job_id: str) -> RenderOutcome: ...
+    def render(self, job_id: str) -> RenderOutcome | PartialOutcome: ...
 
 
 class JobNotFoundError(KeyError):
+    pass
+
+
+class RenderQueueFullError(RuntimeError):
     pass
 
 
@@ -87,6 +99,22 @@ class JobStore:
             ),
         )
 
+    def mark_partial(self, job_id: str, outcome: PartialOutcome) -> LessonJob:
+        return self._mutate(
+            job_id,
+            lambda job: replace(
+                job,
+                status=LessonStatus.PARTIAL,
+                completed_at=utc_now(),
+                error=outcome.error,
+                diagnostics={
+                    "renderer": outcome.renderer,
+                    "elapsed_seconds": outcome.elapsed_seconds,
+                    "logs": outcome.logs,
+                },
+            ),
+        )
+
     def _mutate(
         self,
         job_id: str,
@@ -107,17 +135,27 @@ class LessonService:
         renderer: Renderer,
         store: JobStore | None = None,
         executor: ThreadPoolExecutor | None = None,
+        max_pending_jobs: int = 8,
     ) -> None:
+        if max_pending_jobs <= 0:
+            raise ValueError("max_pending_jobs must be positive")
         self._renderer = renderer
         self._store = store or JobStore()
         self._executor = executor or ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="lesson-render",
         )
+        self._capacity = BoundedSemaphore(max_pending_jobs)
 
     def submit(self, lesson: str) -> LessonJob:
+        if not self._capacity.acquire(blocking=False):
+            raise RenderQueueFullError("render queue is full")
         job = self._store.create(lesson)
-        self._executor.submit(self._run, job.id)
+        try:
+            self._executor.submit(self._run, job.id)
+        except RuntimeError:
+            self._capacity.release()
+            raise
         return job
 
     def get(self, job_id: str) -> LessonJob:
@@ -127,10 +165,16 @@ class LessonService:
         self._executor.shutdown(wait=True, cancel_futures=True)
 
     def _run(self, job_id: str) -> None:
-        self._store.mark_running(job_id)
         try:
-            outcome = self._renderer.render(job_id)
-        except Exception as error:
-            self._store.mark_failed(job_id, error)
-        else:
-            self._store.mark_ready(job_id, outcome)
+            self._store.mark_running(job_id)
+            try:
+                outcome = self._renderer.render(job_id)
+            except Exception as error:
+                self._store.mark_failed(job_id, error)
+            else:
+                if isinstance(outcome, PartialOutcome):
+                    self._store.mark_partial(job_id, outcome)
+                else:
+                    self._store.mark_ready(job_id, outcome)
+        finally:
+            self._capacity.release()

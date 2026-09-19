@@ -38,7 +38,7 @@ def test_known_scene_job_returns_mp4_from_locked_down_container(tmp_path: Path) 
         assert submitted.json()["status"] == "queued"
         job_id = submitted.json()["id"]
 
-        deadline = monotonic() + 90
+        deadline = monotonic() + 105
         while monotonic() < deadline:
             lesson = client.get(f"/lessons/{job_id}").json()
             if lesson["status"] in {"ready", "failed"}:

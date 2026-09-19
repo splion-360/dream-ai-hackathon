@@ -9,9 +9,10 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from math_tutor.domain import LessonJob, LessonStatus
-from math_tutor.jobs import JobNotFoundError, LessonService
+from math_tutor.jobs import JobNotFoundError, LessonService, RenderQueueFullError
 
 
 class CreateLessonRequest(BaseModel):
@@ -49,7 +50,7 @@ def create_app(service: LessonService) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
-        service.close()
+        await run_in_threadpool(service.close)
 
     app = FastAPI(title="Math Tutor API", version="0.1.0", lifespan=lifespan)
 
@@ -59,7 +60,14 @@ def create_app(service: LessonService) -> FastAPI:
         status_code=status.HTTP_202_ACCEPTED,
     )
     def submit_lesson(request: CreateLessonRequest) -> LessonResponse:
-        return to_response(service.submit(request.lesson))
+        try:
+            return to_response(service.submit(request.lesson))
+        except RenderQueueFullError as error:
+            raise HTTPException(
+                status_code=503,
+                detail="render queue is full",
+                headers={"Retry-After": "1"},
+            ) from error
 
     @app.get("/lessons/{job_id}", response_model=LessonResponse)
     def get_lesson(job_id: str) -> LessonResponse:

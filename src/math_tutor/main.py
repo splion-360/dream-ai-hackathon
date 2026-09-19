@@ -15,13 +15,16 @@ def build_app() -> FastAPI:
     artifact_root = Path(os.getenv("MATH_TUTOR_ARTIFACT_ROOT", "artifacts"))
     image = os.getenv("MATH_TUTOR_MANIM_IMAGE", DEFAULT_MANIM_IMAGE)
     timeout_seconds = float(os.getenv("MATH_TUTOR_RENDER_TIMEOUT_SECONDS", "90"))
+    max_pending_jobs = int(os.getenv("MATH_TUTOR_MAX_PENDING_JOBS", "8"))
     renderer = DockerManimRenderer(
         artifact_root=artifact_root,
         scene_path=package_root / "scenes" / "pythagorean_theorem.py",
         image=image,
         timeout_seconds=timeout_seconds,
     )
-    return create_app(LessonService(renderer=renderer))
+    return create_app(
+        LessonService(renderer=renderer, max_pending_jobs=max_pending_jobs)
+    )
 
 
 app = build_app()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,7 @@ def test_renderer_runs_known_scene_with_resource_and_network_limits(tmp_path: Pa
     ) -> subprocess.CompletedProcess[str]:
         commands.append(command)
         assert timeout_seconds == 30
-        video = artifacts / "job-123" / "media" / "videos" / "scene" / "480p15"
+        video = artifacts / "job-123" / "output" / "media" / "videos" / "scene" / "480p15"
         video.mkdir(parents=True)
         (video / "PythagoreanTheorem.mp4").write_bytes(b"mp4")
         return subprocess.CompletedProcess(command, 0, stdout="rendered", stderr="")
@@ -53,6 +54,8 @@ def test_renderer_runs_known_scene_with_resource_and_network_limits(tmp_path: Pa
     assert metadata["image"] == "manimcommunity/manim:v0.19.0"
     assert metadata["exit_code"] == 0
     assert metadata["stdout"] == "rendered"
+    assert metadata["scene_sha256"] == sha256(b"# known-good scene").hexdigest()
+    assert (artifacts / "job-123" / "scene.py").read_text() == "# known-good scene"
 
 
 def test_renderer_force_removes_container_after_timeout(tmp_path: Path) -> None:
@@ -80,6 +83,32 @@ def test_renderer_force_removes_container_after_timeout(tmp_path: Path) -> None:
     )
     assert metadata["status"] == "timed_out"
     assert metadata["stdout"] == "still rendering"
+    assert metadata["cleanup_succeeded"] is True
+
+
+def test_renderer_reports_when_timeout_cleanup_fails(tmp_path: Path) -> None:
+    def timeout_and_failed_cleanup(
+        command: list[str], timeout_seconds: float
+    ) -> subprocess.CompletedProcess[str]:
+        if command[:2] == ["docker", "run"]:
+            raise subprocess.TimeoutExpired(command, timeout_seconds)
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="daemon unavailable")
+
+    renderer = DockerManimRenderer(
+        artifact_root=tmp_path / "artifacts",
+        scene_path=_scene_file(tmp_path),
+        timeout_seconds=0.1,
+        command_runner=timeout_and_failed_cleanup,
+    )
+
+    with pytest.raises(RenderTimedOut, match="container cleanup failed"):
+        renderer.render("cleanup-failed-job")
+
+    metadata = json.loads(
+        (tmp_path / "artifacts" / "cleanup-failed-job" / "render.json").read_text()
+    )
+    assert metadata["cleanup_succeeded"] is False
+    assert metadata["cleanup_stderr"] == "daemon unavailable"
 
 
 def test_renderer_preserves_diagnostics_for_terminal_failure(tmp_path: Path) -> None:
@@ -106,6 +135,57 @@ def test_renderer_preserves_diagnostics_for_terminal_failure(tmp_path: Path) -> 
     assert metadata["status"] == "failed"
     assert metadata["exit_code"] == 42
     assert metadata["stderr"] == "render exploded"
+
+
+def test_renderer_preserves_diagnostics_when_docker_cannot_start(tmp_path: Path) -> None:
+    def missing_docker(
+        command: list[str], timeout_seconds: float
+    ) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError("docker executable missing")
+
+    renderer = DockerManimRenderer(
+        artifact_root=tmp_path / "artifacts",
+        scene_path=_scene_file(tmp_path),
+        command_runner=missing_docker,
+    )
+
+    with pytest.raises(RenderFailed, match="docker executable missing"):
+        renderer.render("missing-docker-job")
+
+    metadata = json.loads(
+        (tmp_path / "artifacts" / "missing-docker-job" / "render.json").read_text()
+    )
+    assert metadata["status"] == "failed"
+    assert metadata["stderr"] == "docker executable missing"
+
+
+def test_renderer_rejects_video_symlink_that_escapes_job_directory(tmp_path: Path) -> None:
+    artifacts = tmp_path / "artifacts"
+    secret = tmp_path / "secret.txt"
+    secret.write_text("not a video", encoding="utf-8")
+
+    def symlink_run(command: list[str], timeout_seconds: float) -> subprocess.CompletedProcess[str]:
+        video = (
+            artifacts
+            / "symlink-job"
+            / "output"
+            / "media"
+            / "videos"
+            / "scene"
+            / "480p15"
+        )
+        video.mkdir(parents=True)
+        (video / "PythagoreanTheorem.mp4").symlink_to(secret)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    renderer = DockerManimRenderer(
+        artifact_root=artifacts,
+        scene_path=_scene_file(tmp_path),
+        command_runner=symlink_run,
+    )
+
+    with pytest.raises(RenderFailed, match="unsafe rendered video path"):
+        renderer.render("symlink-job")
 
 
 def _option(command: list[str], name: str) -> str:

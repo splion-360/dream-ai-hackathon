@@ -7,7 +7,7 @@ from time import monotonic, sleep
 from fastapi.testclient import TestClient
 
 from math_tutor.api import create_app
-from math_tutor.jobs import LessonService, RenderOutcome
+from math_tutor.jobs import LessonService, PartialOutcome, RenderOutcome
 
 
 class ControlledRenderer:
@@ -31,6 +31,16 @@ class ControlledRenderer:
 class FailedRenderer:
     def render(self, job_id: str) -> RenderOutcome:
         raise RuntimeError(f"render failed for {job_id}")
+
+
+class PartialRenderer:
+    def render(self, job_id: str) -> PartialOutcome:
+        return PartialOutcome(
+            renderer="partial-test-renderer",
+            elapsed_seconds=0.01,
+            logs="video unavailable",
+            error=f"partial result for {job_id}",
+        )
 
 
 def wait_for_status(client: TestClient, job_id: str, expected: str) -> dict[str, object]:
@@ -94,3 +104,35 @@ def test_render_failure_reaches_terminal_failed_state() -> None:
     assert failed["completed_at"] is not None
     assert failed["video_url"] is None
     assert "render failed" in failed["error"]
+
+
+def test_useful_incomplete_result_reaches_terminal_partial_state() -> None:
+    service = LessonService(renderer=PartialRenderer())
+
+    with TestClient(create_app(service)) as client:
+        submitted = client.post("/lessons", json={"lesson": "pythagorean-theorem"})
+        partial = wait_for_status(client, submitted.json()["id"], "partial")
+
+    assert partial["completed_at"] is not None
+    assert partial["video_url"] is None
+    assert partial["error"].startswith("partial result")
+    assert partial["diagnostics"]["renderer"] == "partial-test-renderer"
+
+
+def test_submission_is_rejected_when_render_capacity_is_full(tmp_path: Path) -> None:
+    renderer = ControlledRenderer(tmp_path / "lesson.mp4")
+    service = LessonService(renderer=renderer, max_pending_jobs=1)
+
+    with TestClient(create_app(service)) as client:
+        first = client.post("/lessons", json={"lesson": "pythagorean-theorem"})
+        assert renderer.started.wait(timeout=1)
+
+        second = client.post("/lessons", json={"lesson": "pythagorean-theorem"})
+
+        assert first.status_code == 202
+        assert second.status_code == 503
+        assert second.headers["retry-after"] == "1"
+        assert second.json() == {"detail": "render queue is full"}
+        renderer.video_path.write_bytes(b"video")
+        renderer.release.set()
+        wait_for_status(client, first.json()["id"], "ready")

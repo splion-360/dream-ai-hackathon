@@ -38,7 +38,7 @@ The `202 Accepted` response contains a stable job `id` and begins in `queued`. P
 curl http://127.0.0.1:8000/lessons/JOB_ID
 ```
 
-The status progresses through `queued` and `running` to a terminal `ready` or `failed` state. `partial` is reserved for later lessons that retain useful text or code when a downstream media step fails. A ready response contains a `video_url`; open that URL or download it with `curl`.
+The status progresses through `queued` and `running` to a terminal `ready`, `partial`, or `failed` state. `partial` represents an incomplete lesson that still retains useful artifacts or diagnostics. A ready response contains a `video_url`; open that URL or download it with `curl`. When all render capacity is occupied, new submissions receive `503 Service Unavailable` with `Retry-After: 1` instead of accumulating an unbounded queue.
 
 ## Isolation and artifacts
 
@@ -50,7 +50,7 @@ Every render runs with:
 - all Linux capabilities dropped and privilege escalation disabled;
 - a configurable 90-second wall-clock timeout followed by forced cleanup.
 
-Each job writes under `artifacts/<job-id>/`. The MP4 stays beneath `media/`, while `render.json` records the image, command, timestamps, timeout, exit code, and bounded stdout/stderr needed to reproduce or diagnose the attempt. Generated artifacts are intentionally ignored by Git.
+Each job writes under `artifacts/<job-id>/`. A snapshot and SHA-256 hash preserve the exact scene source. The MP4 stays beneath `output/media/`, while `render.json` records the image, command, timestamps, timeout, cleanup result, exit code, and bounded stdout/stderr needed to reproduce or diagnose the attempt. Before a job becomes ready, PyAV decodes a video frame inside the pinned container and the host rejects symlinks or paths escaping the job output directory. Generated artifacts are intentionally ignored by Git.
 
 Configuration can be supplied through the variables documented in [.env.example](.env.example). These variables are read from the process environment; the application does not automatically load the file.
 
