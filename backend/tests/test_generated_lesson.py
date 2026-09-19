@@ -164,6 +164,37 @@ def test_voiceover_validation_rejects_wrong_mode_and_unsafe_code(
         extract_and_validate_scene(f"```python\n{source}```", voiceover=voiceover)
 
 
+@pytest.mark.parametrize(
+    "unsafe_import",
+    [
+        "from manim_voiceover import os",
+        "from manim_voiceover.services.elevenlabs import os",
+        "from manim_voiceover.services.elevenlabs import *",
+        "from .manim_voiceover import VoiceoverScene",
+    ],
+)
+def test_voiceover_validation_rejects_transitive_or_broad_imports(
+    unsafe_import: str,
+) -> None:
+    source = VOICEOVER_SCENE.replace(
+        "from manim_voiceover import VoiceoverScene",
+        f"from manim_voiceover import VoiceoverScene\n{unsafe_import}",
+    )
+
+    with pytest.raises(SceneValidationError, match="not allowed"):
+        extract_and_validate_scene(f"```python\n{source}```", voiceover=True)
+
+
+def test_validation_rejects_aliasing_dynamic_execution() -> None:
+    source = VALID_SCENE.replace(
+        "    def construct(self):",
+        "    def construct(self):\n        run = exec\n        run('print(1)')",
+    )
+
+    with pytest.raises(SceneValidationError, match="exec"):
+        extract_and_validate_scene(f"```python\n{source}```")
+
+
 def test_voiceover_validation_requires_three_to_six_blocks_and_tracker_duration() -> None:
     one_block = VOICEOVER_SCENE.split(
         '        with self.voiceover(text="Move it right.") as tracker:'

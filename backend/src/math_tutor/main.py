@@ -130,6 +130,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             timeout_seconds=resolved.render_timeout_seconds,
             network="bridge",
             environment={"ELEVEN_API_KEY": elevenlabs_api_key},
+            require_audio=True,
         )
         voiceover_generated_renderer = GeneratedLessonPipeline(
             artifact_root=resolved.artifact_root,

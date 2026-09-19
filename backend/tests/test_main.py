@@ -137,3 +137,4 @@ def test_build_app_configures_voiceover_generation_when_elevenlabs_is_available(
     )
     assert voiceover_renderer["network"] == "bridge"
     assert voiceover_renderer["environment"] == {"ELEVEN_API_KEY": "eleven-secret"}
+    assert voiceover_renderer["require_audio"] is True

@@ -15,12 +15,10 @@ from math_tutor.renderer import RenderError
 
 _PYTHON_FENCE = re.compile(r"```(?:python|py)\s*\n(.*?)```", re.IGNORECASE | re.DOTALL)
 _ALLOWED_IMPORTS = frozenset({"manim", "math", "numpy"})
-_VOICEOVER_IMPORTS = frozenset(
-    {
-        "manim_voiceover",
-        "manim_voiceover.services.elevenlabs",
-    }
-)
+_VOICEOVER_IMPORTS = {
+    "manim_voiceover": frozenset({"VoiceoverScene"}),
+    "manim_voiceover.services.elevenlabs": frozenset({"ElevenLabsService"}),
+}
 _FORBIDDEN_CALLS = frozenset(
     {
         "open",
@@ -141,16 +139,28 @@ def extract_and_validate_scene(
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
             root = module.partition(".")[0]
-            permitted = root in _ALLOWED_IMPORTS or (voiceover and module in _VOICEOVER_IMPORTS)
+            permitted = node.level == 0 and root in _ALLOWED_IMPORTS
+            if voiceover and module in _VOICEOVER_IMPORTS:
+                permitted = node.level == 0 and all(
+                    alias.name in _VOICEOVER_IMPORTS[module]
+                    and alias.name != "*"
+                    and alias.asname is None
+                    for alias in node.names
+                )
             if not permitted:
                 raise _unsafe_import(module or root)
-        elif isinstance(node, (ast.Name, ast.Attribute)) and _is_dunder_identifier(
-            node.id if isinstance(node, ast.Name) else node.attr
-        ):
-            raise SceneValidationError(
-                "dunder identifiers are not allowed in generated scenes",
-                diagnostics={"failure_stage": "validation"},
-            )
+        elif isinstance(node, (ast.Name, ast.Attribute)):
+            identifier = node.id if isinstance(node, ast.Name) else node.attr
+            if _is_dunder_identifier(identifier):
+                raise SceneValidationError(
+                    "dunder identifiers are not allowed in generated scenes",
+                    diagnostics={"failure_stage": "validation"},
+                )
+            if isinstance(node, ast.Name) and identifier in _FORBIDDEN_CALLS:
+                raise SceneValidationError(
+                    f"reference '{identifier}' is not allowed in generated scenes",
+                    diagnostics={"failure_stage": "validation"},
+                )
         elif isinstance(node, ast.Call):
             forbidden_call = _forbidden_call_name(node.func)
             if forbidden_call is not None:

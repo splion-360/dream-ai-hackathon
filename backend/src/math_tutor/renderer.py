@@ -61,6 +61,7 @@ class DockerManimRenderer:
         command_runner: CommandRunner = run_command,
         network: str = "none",
         environment: Mapping[str, str] | None = None,
+        require_audio: bool = False,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
@@ -79,12 +80,14 @@ class DockerManimRenderer:
         self._run_command = command_runner
         self._network = network
         self._environment = resolved_environment
+        self._require_audio = require_audio
 
     def render(self, job_id: str) -> RenderOutcome:
         try:
             source = self._scene_path.read_text(encoding="utf-8")
         except OSError as error:
-            raise self._failed(f"could not read scene source: {error}", str(error)) from error
+            detail = self._redact(str(error))
+            raise self._failed(f"could not read scene source: {detail}", detail) from error
         return self.render_source(job_id, source, "PythagoreanTheorem")
 
     def render_source(self, job_id: str, source: str, scene_class: str) -> RenderOutcome:
@@ -108,12 +111,13 @@ class DockerManimRenderer:
                 elapsed_seconds=0,
                 exit_code=None,
                 stdout="",
-                stderr=str(error),
+                stderr=self._redact(str(error)),
                 scene_sha256=None,
                 validator_sha256=None,
                 scene_class=scene_class,
             )
-            raise self._failed(f"could not snapshot render inputs: {error}", str(error)) from error
+            detail = self._redact(str(error))
+            raise self._failed(f"could not snapshot render inputs: {detail}", detail) from error
         scene_digest = sha256(scene_snapshot.read_bytes()).hexdigest()
         validator_digest = sha256(validator_snapshot.read_bytes()).hexdigest()
         output_dir = job_dir / "output"
@@ -141,8 +145,9 @@ class DockerManimRenderer:
         except subprocess.TimeoutExpired as error:
             elapsed = monotonic() - started
             cleanup_succeeded, cleanup_stderr = self._force_remove(container_name)
-            stdout = _as_text(error.output)
-            stderr = _as_text(error.stderr)
+            stdout = self._redact(_as_text(error.output))
+            stderr = self._redact(_as_text(error.stderr))
+            cleanup_stderr = self._redact(cleanup_stderr)
             self._write_metadata(
                 job_dir,
                 status="timed_out",
@@ -178,16 +183,17 @@ class DockerManimRenderer:
                 elapsed_seconds=elapsed,
                 exit_code=None,
                 stdout="",
-                stderr=str(error),
+                stderr=self._redact(str(error)),
                 scene_sha256=scene_digest,
                 validator_sha256=validator_digest,
                 scene_class=scene_class,
             )
-            raise self._failed(f"could not start Manim container: {error}", str(error)) from error
+            detail = self._redact(str(error))
+            raise self._failed(f"could not start Manim container: {detail}", detail) from error
 
         elapsed = monotonic() - started
-        stdout = _trim(result.stdout)
-        stderr = _trim(result.stderr)
+        stdout = self._redact(_trim(result.stdout))
+        stderr = self._redact(_trim(result.stderr))
         if result.returncode != 0:
             self._write_metadata(
                 job_dir,
@@ -278,7 +284,7 @@ class DockerManimRenderer:
         container_name: str,
         scene_class: str,
     ) -> list[str]:
-        return [
+        command = [
             "docker",
             "run",
             "--rm",
@@ -321,14 +327,23 @@ class DockerManimRenderer:
             "/work/render_known.py",
             scene_class,
         ]
+        if self._require_audio:
+            command.append("--require-audio")
+        return command
 
     def _force_remove(self, container_name: str) -> tuple[bool, str]:
         try:
             result = self._run_command(["docker", "rm", "-f", container_name], 10)
         except (OSError, subprocess.SubprocessError) as error:
-            return False, str(error)
-        detail = _trim(result.stderr) or _trim(result.stdout)
+            return False, self._redact(str(error))
+        detail = self._redact(_trim(result.stderr) or _trim(result.stdout))
         return result.returncode == 0, detail
+
+    def _redact(self, value: str) -> str:
+        for secret in self._environment.values():
+            if secret:
+                value = value.replace(secret, "[REDACTED]")
+        return value
 
     def _write_metadata(
         self,
