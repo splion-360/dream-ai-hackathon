@@ -10,10 +10,90 @@ import pytest
 
 from math_tutor.renderer import (
     DEFAULT_MANIM_IMAGE,
+    VOICEOVER_MANIM_IMAGE,
     DockerManimRenderer,
     RenderFailed,
     RenderTimedOut,
 )
+
+
+def test_voiceover_renderer_enables_network_without_persisting_secret(tmp_path: Path) -> None:
+    artifacts = tmp_path / "artifacts"
+    observed: dict[str, object] = {}
+
+    def successful_run(
+        command: list[str],
+        timeout_seconds: float,
+        environment: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        observed["command"] = command
+        observed["environment"] = environment
+        video = artifacts / "voice-job" / "output" / "media" / "videos" / "scene"
+        video.mkdir(parents=True)
+        (video / "GeneratedLesson.mp4").write_bytes(b"mp4")
+        return subprocess.CompletedProcess(command, 0, stdout="rendered", stderr="")
+
+    renderer = DockerManimRenderer(
+        artifact_root=artifacts,
+        scene_path=_scene_file(tmp_path),
+        image=VOICEOVER_MANIM_IMAGE,
+        network="bridge",
+        environment={"ELEVEN_API_KEY": "do-not-persist"},
+        require_audio=True,
+        command_runner=successful_run,
+    )
+
+    renderer.render_source("voice-job", "source", "GeneratedLesson")
+
+    command = observed["command"]
+    assert isinstance(command, list)
+    assert _option(command, "--network") == "bridge"
+    environment_options = [
+        command[index + 1] for index, part in enumerate(command) if part == "--env"
+    ]
+    assert environment_options == ["HOME=/tmp", "ELEVEN_API_KEY"]
+    assert all("do-not-persist" not in part for part in command)
+    assert command[-1] == "--require-audio"
+    environment = observed["environment"]
+    assert isinstance(environment, dict)
+    assert environment["ELEVEN_API_KEY"] == "do-not-persist"
+    metadata_text = (artifacts / "voice-job" / "render.json").read_text()
+    assert "do-not-persist" not in metadata_text
+
+
+def test_renderer_redacts_secret_from_failure_and_metadata(tmp_path: Path) -> None:
+    secret = "credential-from-renderer"
+
+    def failed_run(
+        command: list[str],
+        timeout_seconds: float,
+        environment: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            stdout=f"stdout {secret}",
+            stderr=f"stderr {secret}",
+        )
+
+    renderer = DockerManimRenderer(
+        artifact_root=tmp_path / "artifacts",
+        scene_path=_scene_file(tmp_path),
+        image=VOICEOVER_MANIM_IMAGE,
+        network="bridge",
+        environment={"ELEVEN_API_KEY": secret},
+        require_audio=True,
+        command_runner=failed_run,
+    )
+
+    with pytest.raises(RenderFailed) as caught:
+        renderer.render_source("redacted-job", "source", "GeneratedLesson")
+
+    metadata = (tmp_path / "artifacts" / "redacted-job" / "render.json").read_text()
+    assert secret not in metadata
+    assert secret not in str(caught.value)
+    assert secret not in json.dumps(caught.value.diagnostics)
+    assert "[REDACTED]" in metadata
 
 
 def test_renderer_runs_known_scene_with_resource_and_network_limits(tmp_path: Path) -> None:

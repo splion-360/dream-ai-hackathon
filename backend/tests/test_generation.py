@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from math_tutor.generation import (
+    VOICEOVER_SYSTEM_PROMPT,
     GenerationConfig,
     ModalVllmClient,
     NebiusTokenFactoryClient,
@@ -86,6 +87,15 @@ def test_system_prompt_requires_imports_for_every_referenced_module() -> None:
 
     assert "Start the code with exactly these three lines" in config.system_prompt
     assert "from manim import *\nimport math\nimport numpy as np" in config.system_prompt
+
+
+def test_voiceover_prompt_requires_timed_narration_blocks() -> None:
+    assert "VoiceoverScene" in VOICEOVER_SYSTEM_PROMPT
+    assert "ElevenLabsService" in VOICEOVER_SYSTEM_PROMPT
+    assert "3 to 6" in VOICEOVER_SYSTEM_PROMPT
+    assert "tracker.duration" in VOICEOVER_SYSTEM_PROMPT
+    assert "transcription_model=None" in VOICEOVER_SYSTEM_PROMPT
+    assert 'model="eleven_multilingual_v2"' in VOICEOVER_SYSTEM_PROMPT
 
 
 def test_health_distinguishes_reachable_api_from_unavailable_model() -> None:

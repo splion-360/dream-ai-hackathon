@@ -11,6 +11,7 @@ from math_tutor.generated_lesson import (
     GeneratedLessonError,
     GeneratedLessonPipeline,
     SceneValidationError,
+    VoiceoverFallbackRenderer,
     extract_and_validate_scene,
 )
 from math_tutor.generation import (
@@ -21,12 +22,36 @@ from math_tutor.generation import (
     TokenUsage,
 )
 from math_tutor.jobs import RenderOutcome
+from math_tutor.narration import NarrationStatus
+from math_tutor.renderer import RenderFailed
 
 VALID_SCENE = """from manim import *
 
 class GeneratedLesson(Scene):
     def construct(self):
         self.play(Write(MathTex(r"x^2")))
+"""
+
+VOICEOVER_SCENE = """from manim import *
+from manim_voiceover import VoiceoverScene
+from manim_voiceover.services.elevenlabs import ElevenLabsService
+
+class GeneratedLesson(VoiceoverScene):
+    def construct(self):
+        self.set_speech_service(
+            ElevenLabsService(
+                voice_id="voice-id",
+                model="eleven_multilingual_v2",
+                transcription_model=None,
+            )
+        )
+        circle = Circle()
+        with self.voiceover(text="Draw the circle.") as tracker:
+            self.play(Create(circle), run_time=tracker.duration)
+        with self.voiceover(text="Move it right.") as tracker:
+            self.play(circle.animate.shift(RIGHT), run_time=tracker.duration)
+        with self.voiceover(text="Now remove it.") as tracker:
+            self.play(FadeOut(circle), run_time=tracker.duration)
 """
 
 
@@ -66,6 +91,18 @@ class FailingGenerator:
         raise ProviderError("provider unavailable")
 
 
+class RecordingPromptRenderer:
+    def __init__(self, outcome: RenderOutcome | Exception) -> None:
+        self._outcome = outcome
+        self.calls: list[tuple[str, str | None]] = []
+
+    def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome:
+        self.calls.append((job_id, prompt))
+        if isinstance(self._outcome, Exception):
+            raise self._outcome
+        return self._outcome
+
+
 def _generation(content: str) -> GenerationResult:
     return GenerationResult(
         content=content,
@@ -83,6 +120,119 @@ def test_extracts_one_python_fence_and_validates_generated_scene() -> None:
 
     assert extracted.source == VALID_SCENE.rstrip()
     assert extracted.scene_class == "GeneratedLesson"
+
+
+def test_accepts_voiceover_scene_with_three_timed_narration_blocks() -> None:
+    extracted = extract_and_validate_scene(
+        f"```python\n{VOICEOVER_SCENE}```",
+        voiceover=True,
+    )
+
+    assert extracted.source == VOICEOVER_SCENE.rstrip()
+
+
+@pytest.mark.parametrize(
+    ("source", "voiceover", "message"),
+    [
+        (VALID_SCENE, True, "inherit directly from VoiceoverScene"),
+        (VOICEOVER_SCENE, False, "inherit directly from Scene"),
+        (
+            VOICEOVER_SCENE.replace(
+                "from manim_voiceover import VoiceoverScene",
+                "import os\nfrom manim_voiceover import VoiceoverScene",
+            ),
+            True,
+            "import 'os' is not allowed",
+        ),
+        (
+            VOICEOVER_SCENE.replace(
+                "        with self.voiceover",
+                "        open('/tmp/x')\n        with self.voiceover",
+                1,
+            ),
+            True,
+            "call 'open' is not allowed",
+        ),
+    ],
+)
+def test_voiceover_validation_rejects_wrong_mode_and_unsafe_code(
+    source: str,
+    voiceover: bool,
+    message: str,
+) -> None:
+    with pytest.raises(SceneValidationError, match=message):
+        extract_and_validate_scene(f"```python\n{source}```", voiceover=voiceover)
+
+
+@pytest.mark.parametrize(
+    "unsafe_import",
+    [
+        "from manim_voiceover import os",
+        "from manim_voiceover.services.elevenlabs import os",
+        "from manim_voiceover.services.elevenlabs import *",
+        "from .manim_voiceover import VoiceoverScene",
+    ],
+)
+def test_voiceover_validation_rejects_transitive_or_broad_imports(
+    unsafe_import: str,
+) -> None:
+    source = VOICEOVER_SCENE.replace(
+        "from manim_voiceover import VoiceoverScene",
+        f"from manim_voiceover import VoiceoverScene\n{unsafe_import}",
+    )
+
+    with pytest.raises(SceneValidationError, match="not allowed"):
+        extract_and_validate_scene(f"```python\n{source}```", voiceover=True)
+
+
+def test_validation_rejects_aliasing_dynamic_execution() -> None:
+    source = VALID_SCENE.replace(
+        "    def construct(self):",
+        "    def construct(self):\n        run = exec\n        run('print(1)')",
+    )
+
+    with pytest.raises(SceneValidationError, match="exec"):
+        extract_and_validate_scene(f"```python\n{source}```")
+
+
+def test_voiceover_validation_requires_three_to_six_blocks_and_tracker_duration() -> None:
+    one_block = VOICEOVER_SCENE.split(
+        '        with self.voiceover(text="Move it right.") as tracker:'
+    )[0]
+    one_block += "\n"
+
+    with pytest.raises(SceneValidationError, match="3 to 6 voiceover blocks"):
+        extract_and_validate_scene(f"```python\n{one_block}```", voiceover=True)
+
+    without_duration = VOICEOVER_SCENE.replace("tracker.duration", "1")
+    with pytest.raises(SceneValidationError, match="tracker.duration"):
+        extract_and_validate_scene(f"```python\n{without_duration}```", voiceover=True)
+
+
+def test_voiceover_validation_disables_optional_whisper_transcription() -> None:
+    default_transcription = VOICEOVER_SCENE.replace(
+        "                transcription_model=None,\n",
+        "",
+    )
+
+    with pytest.raises(SceneValidationError, match="transcription_model=None"):
+        extract_and_validate_scene(
+            f"```python\n{default_transcription}```",
+            voiceover=True,
+        )
+
+
+def test_voiceover_validation_rejects_deprecated_elevenlabs_model() -> None:
+    deprecated_model = VOICEOVER_SCENE.replace(
+        'model="eleven_multilingual_v2"',
+        'model="eleven_monolingual_v1"',
+    )
+
+    with pytest.raises(SceneValidationError, match="eleven_multilingual_v2"):
+        extract_and_validate_scene(
+            f"```python\n{deprecated_model}```",
+            voiceover=True,
+        )
 
 
 def test_rejects_ambiguous_multiple_code_fences() -> None:
@@ -220,3 +370,48 @@ def test_pipeline_rejects_unsafe_job_id_before_writing_or_generation(tmp_path: P
 
     assert caught.value.diagnostics == {"failure_stage": "validation"}
     assert not (tmp_path / "escaped").exists()
+
+
+def test_voiceover_fallback_returns_primary_with_ready_narration(tmp_path: Path) -> None:
+    outcome = RenderOutcome(tmp_path / "voice.mp4", "voice", 1, "rendered")
+    primary = RecordingPromptRenderer(outcome)
+    fallback = RecordingPromptRenderer(
+        RenderOutcome(tmp_path / "silent.mp4", "silent", 1, "rendered")
+    )
+
+    result = VoiceoverFallbackRenderer(primary=primary, fallback=fallback).render(
+        "job-1", "Explain limits"
+    )
+
+    assert result.narration_status is NarrationStatus.READY
+    assert primary.calls == [("job-1", "Explain limits")]
+    assert fallback.calls == []
+
+
+def test_voiceover_fallback_retries_render_failure_as_silent_lesson(tmp_path: Path) -> None:
+    primary = RecordingPromptRenderer(RenderFailed("ElevenLabs failed"))
+    silent = RenderOutcome(tmp_path / "silent.mp4", "silent", 2, "rendered")
+    fallback = RecordingPromptRenderer(silent)
+
+    result = VoiceoverFallbackRenderer(primary=primary, fallback=fallback).render(
+        "job-2", "Explain limits"
+    )
+
+    assert result.video_path == silent.video_path
+    assert result.narration_status is NarrationStatus.UNAVAILABLE
+    assert result.narration_diagnostics == {"voiceover_error": "ElevenLabs failed"}
+    assert fallback.calls == [("job-2-silent", "Explain limits")]
+
+
+def test_voiceover_fallback_does_not_retry_generation_failure(tmp_path: Path) -> None:
+    primary = RecordingPromptRenderer(GeneratedLessonError("invalid scene"))
+    fallback = RecordingPromptRenderer(
+        RenderOutcome(tmp_path / "silent.mp4", "silent", 1, "rendered")
+    )
+
+    with pytest.raises(GeneratedLessonError, match="invalid scene"):
+        VoiceoverFallbackRenderer(primary=primary, fallback=fallback).render(
+            "job-3", "Explain limits"
+        )
+
+    assert fallback.calls == []

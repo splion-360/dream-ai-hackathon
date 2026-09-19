@@ -3,16 +3,22 @@ from __future__ import annotations
 import ast
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from time import monotonic
 from typing import Protocol
 
 from math_tutor.generation import GenerationConfig, GenerationResult, ProviderError
 from math_tutor.jobs import JobExecutionError, RenderOutcome, is_safe_job_id
+from math_tutor.narration import NarrationStatus
+from math_tutor.renderer import RenderError
 
 _PYTHON_FENCE = re.compile(r"```(?:python|py)\s*\n(.*?)```", re.IGNORECASE | re.DOTALL)
 _ALLOWED_IMPORTS = frozenset({"manim", "math", "numpy"})
+_VOICEOVER_IMPORTS = {
+    "manim_voiceover": frozenset({"VoiceoverScene"}),
+    "manim_voiceover.services.elevenlabs": frozenset({"ElevenLabsService"}),
+}
 _FORBIDDEN_CALLS = frozenset(
     {
         "open",
@@ -59,7 +65,38 @@ class SourceRenderer(Protocol):
     def render_source(self, job_id: str, source: str, scene_class: str) -> RenderOutcome: ...
 
 
-def extract_and_validate_scene(response: str) -> ExtractedScene:
+class PromptLessonRenderer(Protocol):
+    def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome: ...
+
+
+class VoiceoverFallbackRenderer:
+    def __init__(
+        self,
+        *,
+        primary: PromptLessonRenderer,
+        fallback: PromptLessonRenderer,
+    ) -> None:
+        self._primary = primary
+        self._fallback = fallback
+
+    def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome:
+        try:
+            outcome = self._primary.render(job_id, prompt)
+        except RenderError as error:
+            fallback = self._fallback.render(f"{job_id}-silent", prompt)
+            return replace(
+                fallback,
+                narration_status=NarrationStatus.UNAVAILABLE,
+                narration_diagnostics={"voiceover_error": str(error)},
+            )
+        return replace(outcome, narration_status=NarrationStatus.READY)
+
+
+def extract_and_validate_scene(
+    response: str,
+    *,
+    voiceover: bool = False,
+) -> ExtractedScene:
     matches = _PYTHON_FENCE.findall(response)
     if len(matches) != 1:
         raise ExtractionError(
@@ -82,11 +119,14 @@ def extract_and_validate_scene(response: str) -> ExtractedScene:
             "generated code must define exactly one class named GeneratedLesson",
             diagnostics={"failure_stage": "validation"},
         )
-    if len(classes) != 1 or not any(
-        isinstance(base, ast.Name) and base.id == "Scene" for base in generated[0].bases
+    expected_base = "VoiceoverScene" if voiceover else "Scene"
+    if len(classes) != 1 or not (
+        len(generated[0].bases) == 1
+        and isinstance(generated[0].bases[0], ast.Name)
+        and generated[0].bases[0].id == expected_base
     ):
         raise SceneValidationError(
-            "GeneratedLesson must be the only class and inherit directly from Scene",
+            f"GeneratedLesson must be the only class and inherit directly from {expected_base}",
             diagnostics={"failure_stage": "validation"},
         )
 
@@ -97,16 +137,30 @@ def extract_and_validate_scene(response: str) -> ExtractedScene:
                 if root not in _ALLOWED_IMPORTS:
                     raise _unsafe_import(root)
         elif isinstance(node, ast.ImportFrom):
-            root = (node.module or "").partition(".")[0]
-            if root not in _ALLOWED_IMPORTS:
-                raise _unsafe_import(root)
-        elif isinstance(node, (ast.Name, ast.Attribute)) and _is_dunder_identifier(
-            node.id if isinstance(node, ast.Name) else node.attr
-        ):
-            raise SceneValidationError(
-                "dunder identifiers are not allowed in generated scenes",
-                diagnostics={"failure_stage": "validation"},
-            )
+            module = node.module or ""
+            root = module.partition(".")[0]
+            permitted = node.level == 0 and root in _ALLOWED_IMPORTS
+            if voiceover and module in _VOICEOVER_IMPORTS:
+                permitted = node.level == 0 and all(
+                    alias.name in _VOICEOVER_IMPORTS[module]
+                    and alias.name != "*"
+                    and alias.asname is None
+                    for alias in node.names
+                )
+            if not permitted:
+                raise _unsafe_import(module or root)
+        elif isinstance(node, (ast.Name, ast.Attribute)):
+            identifier = node.id if isinstance(node, ast.Name) else node.attr
+            if _is_dunder_identifier(identifier):
+                raise SceneValidationError(
+                    "dunder identifiers are not allowed in generated scenes",
+                    diagnostics={"failure_stage": "validation"},
+                )
+            if isinstance(node, ast.Name) and identifier in _FORBIDDEN_CALLS:
+                raise SceneValidationError(
+                    f"reference '{identifier}' is not allowed in generated scenes",
+                    diagnostics={"failure_stage": "validation"},
+                )
         elif isinstance(node, ast.Call):
             forbidden_call = _forbidden_call_name(node.func)
             if forbidden_call is not None:
@@ -115,7 +169,74 @@ def extract_and_validate_scene(response: str) -> ExtractedScene:
                     diagnostics={"failure_stage": "validation"},
                 )
 
+    if voiceover:
+        _validate_voiceover_contract(tree)
+
     return ExtractedScene(source=source, scene_class="GeneratedLesson")
+
+
+def _validate_voiceover_contract(tree: ast.Module) -> None:
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+    service_calls = [
+        node
+        for node in calls
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "set_speech_service"
+    ]
+    if len(service_calls) != 1:
+        raise SceneValidationError(
+            "generated voiceover scene must configure speech service exactly once",
+            diagnostics={"failure_stage": "validation"},
+        )
+    service_argument = service_calls[0].args[0] if service_calls[0].args else None
+    disables_transcription = (
+        isinstance(service_argument, ast.Call)
+        and isinstance(service_argument.func, ast.Name)
+        and service_argument.func.id == "ElevenLabsService"
+        and any(
+            keyword.arg == "transcription_model"
+            and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is None
+            for keyword in service_argument.keywords
+        )
+    )
+    if not disables_transcription:
+        raise SceneValidationError(
+            "ElevenLabsService must set transcription_model=None",
+            diagnostics={"failure_stage": "validation"},
+        )
+    uses_supported_model = isinstance(service_argument, ast.Call) and any(
+        keyword.arg == "model"
+        and isinstance(keyword.value, ast.Constant)
+        and keyword.value.value == "eleven_multilingual_v2"
+        for keyword in service_argument.keywords
+    )
+    if not uses_supported_model:
+        raise SceneValidationError(
+            "ElevenLabsService must use model eleven_multilingual_v2",
+            diagnostics={"failure_stage": "validation"},
+        )
+    voiceover_calls = [
+        node
+        for node in calls
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "voiceover"
+    ]
+    if not 3 <= len(voiceover_calls) <= 6:
+        raise SceneValidationError(
+            "generated voiceover scene must contain 3 to 6 voiceover blocks",
+            diagnostics={"failure_stage": "validation"},
+        )
+    uses_tracker_duration = any(
+        isinstance(node, ast.Attribute)
+        and node.attr == "duration"
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "tracker"
+        for node in ast.walk(tree)
+    )
+    if not uses_tracker_duration:
+        raise SceneValidationError(
+            "generated voiceover scene must pace animation with tracker.duration",
+            diagnostics={"failure_stage": "validation"},
+        )
 
 
 def _unsafe_import(module: str) -> SceneValidationError:
@@ -149,11 +270,13 @@ class GeneratedLessonPipeline:
         prompt: str,
         generator: Generator,
         renderer: SourceRenderer,
+        voiceover: bool = False,
     ) -> None:
         self._artifact_root = artifact_root.resolve()
         self._prompt = prompt
         self._generator = generator
         self._renderer = renderer
+        self._voiceover = voiceover
 
     def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome:
         if not is_safe_job_id(job_id):
@@ -203,7 +326,10 @@ class GeneratedLessonPipeline:
         }
         self._write_metadata(job_dir, metadata)
         try:
-            extracted = extract_and_validate_scene(result.content)
+            extracted = extract_and_validate_scene(
+                result.content,
+                voiceover=self._voiceover,
+            )
         except GeneratedLessonError as error:
             metadata["status"] = f"{error.diagnostics.get('failure_stage', 'validation')}_failed"
             self._write_metadata(job_dir, metadata)
