@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useRef, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 
 import type { LessonJob, LessonStatus, LessonTransport, NarrationStatus } from "./contracts";
 import { isTerminal } from "./contracts";
@@ -34,7 +34,6 @@ export function App({ transport = defaultTransport, pollIntervalMs = 700 }: AppP
   const [polling, setPolling] = useState(false);
   const mounted = useRef(true);
   const busy = polling;
-  const formalizedExpression = useMemo(() => inferFormula(prompt), [prompt]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -78,10 +77,7 @@ export function App({ transport = defaultTransport, pollIntervalMs = 700 }: AppP
           <div className="panel-copy">
             <p className="section-kicker">Create a visual lesson</p>
             <h1>What should we make visible?</h1>
-            <p>
-              Describe a concept, ask a question, or paste an equation. The studio
-              formalizes it before rendering.
-            </p>
+            <p>Describe a concept or ask a question. The studio turns it into a visual lesson.</p>
           </div>
 
           <label htmlFor="lesson-prompt">Prompt or formula</label>
@@ -103,14 +99,6 @@ export function App({ transport = defaultTransport, pollIntervalMs = 700 }: AppP
                 {example}
               </button>
             ))}
-          </div>
-
-          <div className="formula-strip">
-            <div className="formula-strip-head">
-              <span>Formalized LaTeX</span>
-              <span>Extracted</span>
-            </div>
-            <code>{formalizedExpression}</code>
           </div>
 
           <button className="primary-action" type="submit" disabled={busy || !prompt.trim()}>
@@ -365,23 +353,6 @@ function narrationLabel(status: NarrationStatus) {
   if (status === "pending") return "Narration pending";
   if (status === "unavailable") return "Silent fallback active";
   return "Narration not requested";
-}
-
-function inferFormula(prompt: string) {
-  const value = prompt.toLowerCase();
-  if (value.includes("sqrt") || value.includes("√2") || value.includes("irrational")) {
-    return "√2 ∉ ℚ";
-  }
-  if (value.includes("euler")) {
-    return "e^(iπ) + 1 = 0";
-  }
-  if (value.includes("gradient")) {
-    return "θₜ₊₁ = θₜ − η∇J(θₜ)";
-  }
-  if (value.includes("fourier") || value.includes("heat")) {
-    return "F{f}(ξ) = ∫ f(x)e^(-2πixξ) dx";
-  }
-  return "a² + b² = c²";
 }
 
 const delay = (milliseconds: number) =>

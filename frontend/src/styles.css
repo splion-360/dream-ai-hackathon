@@ -97,7 +97,6 @@ button:disabled {
 .brand small,
 .section-kicker,
 .engine-pill,
-.formula-strip-head,
 .status-badge,
 .video-state-pill,
 .scene-label,
@@ -214,39 +213,6 @@ textarea:focus {
 .sample-row button:hover {
   border-color: rgba(112, 197, 184, 0.5);
   color: var(--ink);
-}
-
-.formula-strip {
-  position: relative;
-  overflow: hidden;
-  margin-top: 18px;
-  border: 1px solid rgba(112, 197, 184, 0.25);
-  background:
-    linear-gradient(rgba(112, 197, 184, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(112, 197, 184, 0.12) 1px, transparent 1px),
-    var(--formula);
-  background-size: 26px 26px;
-  padding: 16px;
-}
-
-.formula-strip-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  color: var(--muted);
-}
-
-.formula-strip-head span:last-child {
-  color: var(--primary);
-}
-
-.formula-strip code {
-  display: block;
-  overflow-x: auto;
-  margin-top: 12px;
-  color: #f7f1d2;
-  font: 700 clamp(22px, 2.4vw, 34px)/1.25 var(--font-comic);
-  white-space: nowrap;
 }
 
 .primary-action {
