@@ -15,9 +15,16 @@ interface AppProps {
 
 const examples = [
   "Explain why √2 is irrational",
-  "Geometric intuition of Euler's identity",
-  "How gradient descent minimizes loss",
-  "Derive the Fourier transform from heat diffusion",
+  "Visualize Euler’s identity",
+  "Gradient descent intuition",
+  "Fourier transform from heat diffusion",
+];
+
+const progressSteps = [
+  "Parse prompt",
+  "Generate Manim",
+  "Render video",
+  "Add narration/captions",
 ];
 
 export function App({ transport = defaultTransport, pollIntervalMs = 700 }: AppProps) {
@@ -63,34 +70,21 @@ export function App({ transport = defaultTransport, pollIntervalMs = 700 }: AppP
             <small>Visual math studio</small>
           </span>
         </a>
-        <div className="header-status">
-          <span className="live-dot" />
-          <span>Local demo environment</span>
-        </div>
+        <span className="engine-pill">Dynamic LoRA + Manim + ElevenLabs</span>
       </header>
 
-      <section className="intro-band">
-        <p className="section-kicker">Lesson composer / 01</p>
-        <div className="intro-copy">
-          <h1>From symbolic notation to visual intuition.</h1>
-          <p>
-            Enter a mathematical idea. The tutor packages the derivation,
-            animation, captions, and narration as separate lesson assets.
-          </p>
-        </div>
-      </section>
-
-      <section className="composer-grid" aria-label="Lesson composer">
+      <section className="workspace-grid">
         <form className="composer-panel" onSubmit={submit}>
-          <div className="mode-tabs" aria-label="Input mode">
-            <button type="button" className="mode-tab active">Natural language</button>
-            <button type="button" className="mode-tab" aria-disabled="true">LaTeX / formula</button>
+          <div className="panel-copy">
+            <p className="section-kicker">Create a visual lesson</p>
+            <h1>What should we make visible?</h1>
+            <p>
+              Describe a concept, ask a question, or paste an equation. The studio
+              formalizes it before rendering.
+            </p>
           </div>
 
-          <div className="field-head">
-            <label htmlFor="lesson-prompt">Mathematical question</label>
-            <span>{prompt.length} chars</span>
-          </div>
+          <label htmlFor="lesson-prompt">Prompt or formula</label>
           <textarea
             id="lesson-prompt"
             value={prompt}
@@ -111,201 +105,212 @@ export function App({ transport = defaultTransport, pollIntervalMs = 700 }: AppP
             ))}
           </div>
 
-          <div className="composer-actions">
-            <span>Visual proof · Manim · ElevenLabs-ready</span>
-            <button type="submit" disabled={busy || !prompt.trim()}>
-              {busy ? "Generating…" : "Generate lesson"}
-              <span aria-hidden="true">→</span>
-            </button>
+          <div className="formula-strip">
+            <div className="formula-strip-head">
+              <span>Formalized LaTeX</span>
+              <span>Extracted</span>
+            </div>
+            <code>{formalizedExpression}</code>
+          </div>
+
+          <button className="primary-action" type="submit" disabled={busy || !prompt.trim()}>
+            {busy ? "Generating…" : "Generate lesson"}
+            <span aria-hidden="true">→</span>
+          </button>
+
+          <div className="composer-meta">
+            <span>1080p · 60 fps</span>
+            <span>Typical render 18–24 sec</span>
           </div>
         </form>
 
-        <aside className="formula-panel">
-          <div className="formula-panel-top">
-            <p>Natural language → Formalized LaTeX</p>
-            <span>Extracted</span>
-          </div>
-          <div className="formula-workspace">
-            <blockquote>“{prompt}”</blockquote>
+        <section className="video-panel" aria-live="polite">
+          <div className="video-panel-head">
             <div>
-              <p className="formula-label">Formalized expression</p>
-              <code>{formalizedExpression}</code>
+              <p className="section-kicker">Generated visual lesson</p>
+              <h2>{lesson ? lessonTitle(lesson) : "Video output"}</h2>
             </div>
+            <StatusBadge lesson={lesson} busy={busy} />
           </div>
-          <div className="formula-panel-bottom">
-            <span>Input valid</span>
-            <span>Display mode</span>
+
+          <VideoStage lesson={lesson} busy={busy} />
+
+          <div className="video-controls-strip">
+            <span>Captions enabled</span>
+            <span>{lesson ? narrationLabel(lesson.narration_status) : "Narration pending"}</span>
           </div>
-        </aside>
+
+          {requestError && <p className="request-error" role="alert">{requestError}</p>}
+        </section>
       </section>
 
-      <StatusPanel status={lesson?.status ?? (busy ? "running" : "queued")} lesson={lesson} busy={busy} />
-
-      {requestError && <p className="request-error" role="alert">{requestError}</p>}
-      {lesson && <LessonResult lesson={lesson} />}
+      <SupportTabs lesson={lesson} />
     </main>
   );
 }
 
-function StatusPanel({
-  status,
-  lesson,
-  busy,
-}: {
-  status: LessonStatus;
-  lesson: LessonJob | null;
-  busy: boolean;
-}) {
-  const progress = lessonProgress(status, busy);
-  const label = busy
-    ? status === "queued" ? "Queued" : "Generating lesson"
-    : lesson ? status : "Ready for prompt";
-  const detail = busy
-    ? "Structuring the proof, rendering the scene, and packaging lesson assets."
-    : lesson ? resultDetail(lesson) : "No job has been submitted yet.";
-
-  return (
-    <section className="status-panel" aria-live="polite">
-      <div className="status-summary">
-        <StatusIcon status={status} active={busy} />
-        <div>
-          <p>{label}</p>
-          <span>{detail}</span>
-        </div>
-      </div>
-      <div className="status-track" aria-label="Lesson progress">
-        <span className={`status-progress status-progress-${status}`} style={{ width: `${progress}%` }} />
-      </div>
-      <div className="pipeline-steps">
-        <PipelineStep done={progress > 25} active={progress <= 25} label="Parse & reason" meta="Symbolic graph" />
-        <PipelineStep done={progress > 70} active={progress > 25 && progress <= 70} label="Build animation" meta="Manim render" />
-        <PipelineStep done={progress > 95} active={progress > 70} label="Package lesson" meta="Audio + captions" />
-      </div>
-    </section>
-  );
-}
-
 function LessonResult({ lesson }: { lesson: LessonJob }) {
-  if (lesson.status === "queued" || lesson.status === "running") {
-    return (
-      <section className="result-frame progress-card" aria-live="polite">
-        <div className="spinner-mark">Σ</div>
-        <div>
-          <p className="section-kicker">{lesson.status === "queued" ? "Queued" : "Building your lesson"}</p>
-          <h2>{lesson.status === "queued" ? "Waiting for a render slot" : "Sketching the proof, frame by frame"}</h2>
-          <p>The video and narration are assembled independently, so a voice outage never loses the lesson.</p>
-        </div>
-      </section>
-    );
-  }
-
-  if (lesson.status === "failed") {
-    return (
-      <section className="result-frame error-card" role="alert">
-        <p className="section-kicker">Lesson failed</p>
-        <h2>That proof needs another approach.</h2>
-        <p>{lesson.error ?? "The lesson could not be generated."}</p>
-      </section>
-    );
-  }
-
-  const playableVideo = lesson.video_url ?? lesson.silent_video_url;
-  const heading = lesson.status === "partial"
-    ? "Partial lesson available"
-    : lesson.narration_status === "ready"
-      ? "Narrated lesson ready"
-      : "Video ready · narration unavailable";
-
   return (
-    <section className="lesson-result-grid" aria-live="polite">
-      <article className="lesson-copy">
-        <div className="lesson-heading">
-          <div>
-            <p className="section-kicker">Lesson 01 · from prompt</p>
-            <h2>{heading}</h2>
-          </div>
-          <NarrationBadge status={lesson.narration_status} />
+    <section className="standalone-result">
+      <div className="video-panel-head">
+        <div>
+          <p className="section-kicker">Generated visual lesson</p>
+          <h2>{lessonTitle(lesson)}</h2>
         </div>
-
-        <p className="lesson-summary">
-          {lesson.explanation ?? `Generated visual lesson for: ${lesson.lesson}`}
-        </p>
-
-        <div className="proof-steps">
-          <ProofStep number="01" title="Reasoning target" formula={lesson.lesson}>
-            Convert the prompt into a concise mathematical objective that can be explained visually.
-          </ProofStep>
-          <ProofStep number="02" title="Scene construction" formula="Scene → Shapes → Transformations">
-            Use Manim code to build the animation as composable visual steps.
-          </ProofStep>
-          <ProofStep number="03" title="Narration package" formula="Video + Captions + Voice">
-            Attach synchronized captions and narration when ElevenLabs output is available.
-          </ProofStep>
-        </div>
-
-        <details className="code-panel" open>
-          <summary>Generated Manim · Python</summary>
-          <pre><code>{lesson.generated_code ?? "# Manim source will appear here"}</code></pre>
-        </details>
-      </article>
-
-      <aside className="playback-panel">
-        {playableVideo ? (
-          <div className="video-shell">
-            <video data-testid="lesson-video" src={playableVideo} controls preload="metadata">
-              {lesson.captions_url && (
-                <track
-                  title="English captions"
-                  kind="captions"
-                  src={lesson.captions_url}
-                  srcLang="en"
-                  label="English"
-                  default
-                />
-              )}
-            </video>
-            <span className="scene-label">Scene 03 · visual proof</span>
-            {lesson.captions_url && <span className="caption-preview">Synchronized captions</span>}
-          </div>
-        ) : (
-          <div className="partial-placeholder">
-            <strong>Video render timed out</strong>
-            <span>{lesson.error ?? "The explanation and source code are preserved."}</span>
-          </div>
-        )}
-
-        <div className="playback-meta">
-          <span className={`audio-state audio-state-${lesson.narration_status}`}>
-            {narrationLabel(lesson.narration_status)}
-          </span>
-          {lesson.narration_status === "unavailable" && playableVideo && (
-            <p>Narration could not be attached. Silent playback is ready with the generated lesson assets.</p>
-          )}
-        </div>
-      </aside>
+        <StatusBadge lesson={lesson} busy={false} />
+      </div>
+      <VideoStage lesson={lesson} busy={lesson.status === "queued" || lesson.status === "running"} />
+      {lesson.status !== "queued" && lesson.status !== "running" && <SupportTabs lesson={lesson} />}
     </section>
   );
 }
 
-function PipelineStep({
-  done,
-  active,
-  label,
-  meta,
-}: {
-  done: boolean;
-  active: boolean;
-  label: string;
-  meta: string;
-}) {
+function VideoStage({ lesson, busy }: { lesson: LessonJob | null; busy: boolean }) {
+  if (!lesson) return <EmptyVideo />;
+  if (lesson.status === "queued" || lesson.status === "running") {
+    return <GeneratingVideo lesson={lesson} busy={busy} />;
+  }
+  if (lesson.status === "failed") return <FailedVideo lesson={lesson} />;
+  if (lesson.status === "partial") return <PartialVideo lesson={lesson} />;
+  return <ReadyVideo lesson={lesson} />;
+}
+
+function EmptyVideo() {
   return (
-    <div className="pipeline-step">
-      <span className={done ? "done" : active ? "active" : ""}>{done ? "✓" : active ? "•" : "·"}</span>
-      <div>
-        <p>{label}</p>
-        <small>{meta}</small>
+    <div className="video-stage video-empty">
+      <div className="chalk-orbit" />
+      <div className="empty-video-copy">
+        <span className="play-glyph">▶</span>
+        <h3>Your generated visual lesson will appear here.</h3>
+        <p>Enter a concept or equation, then generate a Manim-powered explanation.</p>
       </div>
     </div>
+  );
+}
+
+function GeneratingVideo({ lesson }: { lesson: LessonJob; busy: boolean }) {
+  const progress = lesson.status === "queued" ? 18 : 68;
+  const heading = lesson.status === "queued"
+    ? "Queued for a render worker"
+    : "Rendering your visual lesson";
+
+  return (
+    <div className="video-stage video-generating">
+      <div className="generation-topline">
+        <span>{lesson.lesson}</span>
+        <span>{progress}%</span>
+      </div>
+      <div className="generation-center">
+        <span className="spinner-mark">∑</span>
+        <h3>{heading}</h3>
+        <div className="progress-track">
+          <span style={{ width: `${progress}%` }} />
+        </div>
+      </div>
+      <div className="inline-steps">
+        {progressSteps.map((step, index) => {
+          const threshold = [10, 32, 68, 90][index] ?? 100;
+          return (
+            <div key={step} className={progress >= threshold ? "is-complete" : ""}>
+              <span />
+              <p>{index + 1}. {step}</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ReadyVideo({ lesson }: { lesson: LessonJob }) {
+  const playableVideo = lesson.video_url ?? lesson.silent_video_url;
+
+  return (
+    <div className="video-stage video-ready">
+      {playableVideo ? (
+        <video data-testid="lesson-video" src={playableVideo} controls preload="metadata">
+          {lesson.captions_url && (
+            <track
+              title="English captions"
+              kind="captions"
+              src={lesson.captions_url}
+              srcLang="en"
+              label="English"
+              default
+            />
+          )}
+        </video>
+      ) : (
+        <div className="video-placeholder">Video asset unavailable</div>
+      )}
+      <span className="scene-label">Scene 03 · visual proof</span>
+      {lesson.captions_url && <span className="caption-preview">Synchronized captions</span>}
+      <span className={`video-state-pill video-state-${lesson.narration_status}`}>
+        {narrationLabel(lesson.narration_status)}
+      </span>
+    </div>
+  );
+}
+
+function PartialVideo({ lesson }: { lesson: LessonJob }) {
+  return (
+    <div className="video-stage video-partial">
+      <h3>Video render timed out</h3>
+      <p>{lesson.error ?? "The render timed out, but useful lesson assets are preserved."}</p>
+    </div>
+  );
+}
+
+function FailedVideo({ lesson }: { lesson: LessonJob }) {
+  return (
+    <div className="video-stage video-failed">
+      <h3>Generation stopped</h3>
+      <p>{lesson.error ?? "The lesson could not be generated."}</p>
+    </div>
+  );
+}
+
+function SupportTabs({ lesson }: { lesson: LessonJob | null }) {
+  return (
+    <section className="support-panel">
+      <div className="support-tabs" role="tablist" aria-label="Lesson details">
+        <button type="button" className="active">Explanation</button>
+        <button type="button">Generated Manim Code</button>
+        <button type="button">Diagnostics / Adapter Routing</button>
+      </div>
+      <div className="support-content">
+        {lesson ? (
+          <article className="explanation-layout">
+            <div>
+              <p className="section-kicker">Mathematical intuition</p>
+              <h2>Explanation</h2>
+              <p>
+                {lesson.explanation ?? `Generated visual lesson for: ${lesson.lesson}`}
+              </p>
+            </div>
+            <div className="proof-list">
+              <ProofStep number="01" title="Reasoning target" formula={lesson.lesson}>
+                Convert the prompt into a concise mathematical objective that can be explained visually.
+              </ProofStep>
+              <ProofStep number="02" title="Scene construction" formula="Scene → Shapes → Transformations">
+                Use Manim code to build the animation as composable visual steps.
+              </ProofStep>
+              <ProofStep number="03" title="Narration package" formula="Video + Captions + Voice">
+                Attach synchronized captions and narration when ElevenLabs output is available.
+              </ProofStep>
+              <details className="code-panel">
+                <summary>Generated Manim · Python</summary>
+                <pre><code>{lesson.generated_code ?? "# Manim source will appear here"}</code></pre>
+              </details>
+            </div>
+          </article>
+        ) : (
+          <div className="awaiting-content">
+            Generate a visual lesson to unlock its explanation, code, and adapter diagnostics.
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -332,13 +337,27 @@ function ProofStep({
   );
 }
 
-function StatusIcon({ status, active }: { status: LessonStatus; active: boolean }) {
-  const symbol = status === "failed" ? "!" : status === "ready" ? "✓" : status === "partial" ? "△" : "↻";
-  return <span className={`status-icon status-icon-${status} ${active ? "is-active" : ""}`}>{symbol}</span>;
+function StatusBadge({ lesson, busy }: { lesson: LessonJob | null; busy: boolean }) {
+  const status = lesson?.status ?? (busy ? "running" : "idle");
+  const text = !lesson
+    ? busy ? "Rendering" : "Awaiting prompt"
+    : status === "ready" ? "Ready"
+      : status === "partial" ? "Partial output"
+        : status === "failed" ? "Failed"
+          : status === "queued" ? "Queued"
+            : "Rendering";
+
+  return <span className={`status-badge status-${status}`}>{text}</span>;
 }
 
-function NarrationBadge({ status }: { status: NarrationStatus }) {
-  return <span className={`narration-badge narration-${status}`}>{narrationLabel(status)}</span>;
+function lessonTitle(lesson: LessonJob) {
+  if (lesson.status === "failed") return "Lesson failed";
+  if (lesson.status === "partial") return "Partial lesson available";
+  if (lesson.status === "queued") return "Queued";
+  if (lesson.status === "running") return "Rendering";
+  if (lesson.narration_status === "ready") return "Narrated lesson ready";
+  if (lesson.narration_status === "unavailable") return "Video ready · narration unavailable";
+  return "Video ready";
 }
 
 function narrationLabel(status: NarrationStatus) {
@@ -346,22 +365,6 @@ function narrationLabel(status: NarrationStatus) {
   if (status === "pending") return "Narration pending";
   if (status === "unavailable") return "Silent fallback active";
   return "Narration not requested";
-}
-
-function resultDetail(lesson: LessonJob) {
-  if (lesson.status === "failed") return lesson.error ?? "Generation stopped.";
-  if (lesson.status === "partial") return "Useful partial output is available.";
-  if (lesson.narration_status === "ready") return "Video, narration, and captions are ready.";
-  if (lesson.narration_status === "unavailable") return "Video is ready without narration.";
-  return "Lesson assets are available.";
-}
-
-function lessonProgress(status: LessonStatus, busy: boolean) {
-  if (status === "failed") return 41;
-  if (status === "partial") return 76;
-  if (status === "ready") return 100;
-  if (status === "running") return 67;
-  return busy ? 18 : 0;
 }
 
 function inferFormula(prompt: string) {
