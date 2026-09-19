@@ -45,12 +45,16 @@ It performs no heavyweight imports and downloads no weights.
 
 ## GPU Training Command
 
-After provisioning a GPU environment, run from the repository root:
+The checked-in `shared_lora_qwen3_4b.json` is a one-step smoke configuration backed by three
+fixture records. Do not spend GPU credits using it as a real experiment. First create a separate
+config that points at the curated training JSONL and records the chosen step budget. Then run from
+the repository root:
 
 ```bash
 uv sync --project training --extra train --python 3.12
+test -n "${TRAIN_CONFIG:-}" || { echo "Set TRAIN_CONFIG to the curated run config"; exit 2; }
 PYTHONPATH=training/src uv run --project training python -m shared_lora_baseline.cli train \
-  --config training/configs/shared_lora_qwen3_4b.json
+  --config "$TRAIN_CONFIG"
 ```
 
 Expected artifacts:

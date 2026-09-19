@@ -22,6 +22,7 @@ SYSTEM_PROMPT = (
 
 class ChatTemplateTokenizer(Protocol):
     eos_token: str | None
+    eos_token_id: int | None
 
     def apply_chat_template(
         self,
@@ -61,6 +62,7 @@ def train_shared_lora(config: TrainingConfig) -> RunPlan:
         revision=FROZEN_MODEL_REVISION,
         quantization_config=quantization_config,
         device_map="auto",
+        torch_dtype=torch.bfloat16,
         trust_remote_code=True,
     )
     if config.load_in_4bit:
@@ -74,19 +76,28 @@ def train_shared_lora(config: TrainingConfig) -> RunPlan:
         task_type=peft.TaskType.CAUSAL_LM,
     )
     model = peft.get_peft_model(model, lora_config)
+    trainable_parameters, total_parameters = model.get_nb_trainable_parameters()
 
     dataset = datasets.Dataset.from_list([_format_record(record, tokenizer) for record in records])
 
     def tokenize(batch: dict[str, list[str]]) -> dict[str, Any]:
-        return cast(
+        encoded = cast(
             dict[str, Any],
             tokenizer(
                 batch["text"],
                 truncation=True,
-                max_length=config.max_seq_length,
+                max_length=config.max_seq_length - 1,
                 padding=False,
             ),
         )
+        eos_token_id = tokenizer.eos_token_id
+        if eos_token_id is not None:
+            for index, input_ids in enumerate(encoded["input_ids"]):
+                if not input_ids or input_ids[-1] != eos_token_id:
+                    input_ids.append(eos_token_id)
+                    if "attention_mask" in encoded:
+                        encoded["attention_mask"][index].append(1)
+        return encoded
 
     tokenized = dataset.map(tokenize, batched=True, remove_columns=["text"])
     training_args = transformers.TrainingArguments(
@@ -123,6 +134,11 @@ def train_shared_lora(config: TrainingConfig) -> RunPlan:
             "transformers": str(transformers.__version__),
         },
     )
+    plan.metadata["parameter_budget"] = {
+        "trainable_parameters": trainable_parameters,
+        "total_parameters": total_parameters,
+        "trainable_percent": round(100 * trainable_parameters / total_parameters, 6),
+    }
     write_run_metadata(plan, config.metadata_path)
     return plan
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -27,6 +28,7 @@ def write_jsonl(path: Path, records: list[dict[str, object]]) -> None:
 
 class FakeTokenizer:
     eos_token = "<|im_end|>"
+    eos_token_id = 99
     pad_token: str | None = None
 
     def apply_chat_template(
@@ -43,8 +45,8 @@ class FakeTokenizer:
             for message in messages
         )
 
-    def __call__(self, *_args: object, **_kwargs: object) -> dict[str, list[int]]:
-        return {"input_ids": [1, 2, 3]}
+    def __call__(self, *_args: object, **_kwargs: object) -> dict[str, list[list[int]]]:
+        return {"input_ids": [[1, 2, 3]], "attention_mask": [[1, 1, 1]]}
 
     def save_pretrained(self, _path: Path) -> None:
         return None
@@ -66,9 +68,14 @@ def test_seed_is_set_before_model_and_adapter_initialization(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     events: list[str] = []
+    model_kwargs: dict[str, object] = {}
+    tokenized_batches: list[dict[str, object]] = []
     tokenizer = FakeTokenizer()
 
     class FakeModel:
+        def get_nb_trainable_parameters(self) -> tuple[int, int]:
+            return 10, 100
+
         def save_pretrained(self, _path: Path) -> None:
             return None
 
@@ -77,7 +84,12 @@ def test_seed_is_set_before_model_and_adapter_initialization(
         def from_list(cls, _records: list[dict[str, str]]) -> FakeDataset:
             return cls()
 
-        def map(self, *_args: object, **_kwargs: object) -> FakeDataset:
+        def map(
+            self,
+            callback: Callable[[dict[str, list[str]]], dict[str, object]],
+            **_kwargs: object,
+        ) -> FakeDataset:
+            tokenized_batches.append(callback({"text": ["sample"]}))
             return self
 
     class FakeTrainer:
@@ -87,13 +99,16 @@ def test_seed_is_set_before_model_and_adapter_initialization(
         def train(self) -> None:
             return None
 
+    def load_model(*_args: object, **kwargs: object) -> FakeModel:
+        events.append("model")
+        model_kwargs.update(kwargs)
+        return FakeModel()
+
     transformers = SimpleNamespace(
         __version__="4.51.0",
         set_seed=lambda _seed: events.append("seed"),
         AutoTokenizer=SimpleNamespace(from_pretrained=lambda *_args, **_kwargs: tokenizer),
-        AutoModelForCausalLM=SimpleNamespace(
-            from_pretrained=lambda *_args, **_kwargs: events.append("model") or FakeModel()
-        ),
+        AutoModelForCausalLM=SimpleNamespace(from_pretrained=load_model),
         TrainingArguments=lambda **_kwargs: object(),
         DataCollatorForLanguageModeling=lambda **_kwargs: object(),
         Trainer=FakeTrainer,
@@ -107,7 +122,7 @@ def test_seed_is_set_before_model_and_adapter_initialization(
     modules = {
         "datasets": SimpleNamespace(__version__="2.21.0", Dataset=FakeDataset),
         "peft": peft,
-        "torch": SimpleNamespace(__version__="2.4.0"),
+        "torch": SimpleNamespace(__version__="2.4.0", bfloat16="bfloat16"),
         "transformers": transformers,
     }
     monkeypatch.setattr(
@@ -136,6 +151,15 @@ def test_seed_is_set_before_model_and_adapter_initialization(
     plan = train_shared_lora(config)
 
     assert events.index("seed") < events.index("model") < events.index("adapter")
+    assert model_kwargs["torch_dtype"] == "bfloat16"
+    assert tokenized_batches[0]["input_ids"] == [[1, 2, 3, 99]]
+    assert tokenized_batches[0]["attention_mask"] == [[1, 1, 1, 1]]
+    assert plan.metadata["weights_loaded"] is True
+    assert plan.metadata["parameter_budget"] == {
+        "trainable_parameters": 10,
+        "total_parameters": 100,
+        "trainable_percent": 10.0,
+    }
     assert plan.metadata["runtime_versions"]["transformers"] == "4.51.0"
     assert set(plan.metadata["runtime_versions"]) == {
         "accelerate",

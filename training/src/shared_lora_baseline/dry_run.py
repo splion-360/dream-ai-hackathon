@@ -31,7 +31,11 @@ def build_run_plan(config: TrainingConfig) -> RunPlan:
 
 
 def add_runtime_versions(plan: RunPlan, versions: dict[str, str]) -> RunPlan:
-    metadata = {**plan.metadata, "runtime_versions": dict(sorted(versions.items()))}
+    metadata = {
+        **plan.metadata,
+        "weights_loaded": True,
+        "runtime_versions": dict(sorted(versions.items())),
+    }
     return RunPlan(metadata=metadata, redacted_text=_render_plan(metadata))
 
 
@@ -50,7 +54,8 @@ def _metadata(config: TrainingConfig, report: DatasetValidationReport) -> dict[s
         "dynamic_adapter_spawning": False,
         "learned_router": False,
         "dependency_constraints": dict(sorted(TRAIN_DEPENDENCY_CONSTRAINTS.items())),
-        "runtime_versions": "not_loaded_dry_run",
+        "weights_loaded": False,
+        "runtime_versions": {},
         "dataset": {
             "train_path": _redact_path(config.train_path),
             "holdout_path": _redact_path(config.holdout_path),
@@ -99,6 +104,7 @@ def _render_plan(metadata: dict[str, Any]) -> str:
         f"  training_ids_sha256: {metadata['dataset']['training_ids_sha256']}",
         f"  training_content_sha256: {metadata['dataset']['training_content_sha256']}",
         f"  holdout_content_sha256: {metadata['dataset']['holdout_content_sha256']}",
+        f"weights_loaded: {str(metadata['weights_loaded']).lower()}",
         f"runtime_versions: {metadata['runtime_versions']}",
         "training:",
     ]
@@ -123,15 +129,10 @@ def _render_plan(metadata: dict[str, Any]) -> str:
 
 def _redact_path(path: Path) -> str:
     resolved = path.resolve()
-    cwd = Path.cwd().resolve()
-    try:
-        return "<workspace>/" + resolved.relative_to(cwd).as_posix()
-    except ValueError:
-        home = Path.home().resolve()
-        try:
-            return "<home>/" + resolved.relative_to(home).as_posix()
-        except ValueError:
-            return "<absolute-path>/" + resolved.name
+    for candidate in (resolved, *resolved.parents):
+        if (candidate / ".git").exists():
+            return "<workspace>/" + resolved.relative_to(candidate).as_posix()
+    return "<external>/" + resolved.name
 
 
 def config_asdict(config: TrainingConfig) -> dict[str, Any]:
