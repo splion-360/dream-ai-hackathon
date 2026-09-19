@@ -66,14 +66,23 @@ class DockerManimRenderer:
         self._run_command = command_runner
 
     def render(self, job_id: str) -> RenderOutcome:
+        try:
+            source = self._scene_path.read_text(encoding="utf-8")
+        except OSError as error:
+            raise self._failed(f"could not read scene source: {error}", str(error)) from error
+        return self.render_source(job_id, source, "PythagoreanTheorem")
+
+    def render_source(self, job_id: str, source: str, scene_class: str) -> RenderOutcome:
         if not _SAFE_JOB_ID.fullmatch(job_id):
             raise RenderFailed("job id is not safe for an artifact path or container name")
+        if not scene_class.isidentifier():
+            raise RenderFailed("scene class is not a valid Python identifier")
         job_dir = self._artifact_root / job_id
-        job_dir.mkdir(parents=True, exist_ok=False)
+        job_dir.mkdir(parents=True, exist_ok=True)
         scene_snapshot = job_dir / "scene.py"
         validator_snapshot = job_dir / "render_known.py"
         try:
-            shutil.copyfile(self._scene_path, scene_snapshot)
+            scene_snapshot.write_text(source, encoding="utf-8")
             shutil.copyfile(self._validation_script, validator_snapshot)
         except OSError as error:
             self._write_metadata(
@@ -87,6 +96,7 @@ class DockerManimRenderer:
                 stderr=str(error),
                 scene_sha256=None,
                 validator_sha256=None,
+                scene_class=scene_class,
             )
             raise self._failed(f"could not snapshot render inputs: {error}", str(error)) from error
         scene_digest = sha256(scene_snapshot.read_bytes()).hexdigest()
@@ -99,6 +109,7 @@ class DockerManimRenderer:
             validator_snapshot,
             output_dir,
             container_name,
+            scene_class,
         )
         started_at = datetime.now(UTC)
         started = monotonic()
@@ -121,6 +132,7 @@ class DockerManimRenderer:
                 stderr=stderr,
                 scene_sha256=scene_digest,
                 validator_sha256=validator_digest,
+                scene_class=scene_class,
                 cleanup_succeeded=cleanup_succeeded,
                 cleanup_stderr=cleanup_stderr,
             )
@@ -147,6 +159,7 @@ class DockerManimRenderer:
                 stderr=str(error),
                 scene_sha256=scene_digest,
                 validator_sha256=validator_digest,
+                scene_class=scene_class,
             )
             raise self._failed(f"could not start Manim container: {error}", str(error)) from error
 
@@ -165,6 +178,7 @@ class DockerManimRenderer:
                 stderr=stderr,
                 scene_sha256=scene_digest,
                 validator_sha256=validator_digest,
+                scene_class=scene_class,
             )
             detail = stderr or stdout or "no renderer output"
             raise self._failed(
@@ -172,7 +186,7 @@ class DockerManimRenderer:
                 "\n".join(part for part in (stdout, stderr) if part),
             )
 
-        videos = list((output_dir / "media").rglob("PythagoreanTheorem.mp4"))
+        videos = list((output_dir / "media").rglob(f"{scene_class}.mp4"))
         if len(videos) != 1:
             self._write_metadata(
                 job_dir,
@@ -185,6 +199,7 @@ class DockerManimRenderer:
                 stderr=stderr,
                 scene_sha256=scene_digest,
                 validator_sha256=validator_digest,
+                scene_class=scene_class,
             )
             message = f"expected one rendered video, found {len(videos)}"
             raise self._failed(message, "\n".join(part for part in (stdout, stderr) if part))
@@ -209,6 +224,7 @@ class DockerManimRenderer:
                 stderr="unsafe rendered video path",
                 scene_sha256=scene_digest,
                 validator_sha256=validator_digest,
+                scene_class=scene_class,
             )
             raise self._failed("unsafe rendered video path", "unsafe rendered video path")
 
@@ -223,6 +239,7 @@ class DockerManimRenderer:
             stderr=stderr,
             scene_sha256=scene_digest,
             validator_sha256=validator_digest,
+            scene_class=scene_class,
         )
         return RenderOutcome(
             video_path=resolved_video,
@@ -237,6 +254,7 @@ class DockerManimRenderer:
         validator_snapshot: Path,
         output_dir: Path,
         container_name: str,
+        scene_class: str,
     ) -> list[str]:
         return [
             "docker",
@@ -274,6 +292,7 @@ class DockerManimRenderer:
             self._image,
             "python",
             "/work/render_known.py",
+            scene_class,
         ]
 
     def _force_remove(self, container_name: str) -> tuple[bool, str]:
@@ -297,6 +316,7 @@ class DockerManimRenderer:
         stderr: str,
         scene_sha256: str | None,
         validator_sha256: str | None,
+        scene_class: str,
         cleanup_succeeded: bool | None = None,
         cleanup_stderr: str = "",
     ) -> None:
@@ -307,6 +327,7 @@ class DockerManimRenderer:
             "scene_sha256": scene_sha256,
             "validator": "render_known.py",
             "validator_sha256": validator_sha256,
+            "scene_class": scene_class,
             "command": command,
             "started_at": started_at.isoformat(),
             "completed_at": datetime.now(UTC).isoformat(),

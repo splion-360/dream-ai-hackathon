@@ -65,6 +65,37 @@ def test_renderer_runs_known_scene_with_resource_and_network_limits(tmp_path: Pa
     assert (artifacts / "job-123" / "render_known.py").is_file()
 
 
+def test_renderer_accepts_generated_source_and_scene_class(tmp_path: Path) -> None:
+    artifacts = tmp_path / "artifacts"
+    commands: list[list[str]] = []
+
+    def successful_run(
+        command: list[str], timeout_seconds: float
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        video = artifacts / "generated-job" / "output" / "media" / "videos" / "scene"
+        video.mkdir(parents=True)
+        (video / "GeneratedLesson.mp4").write_bytes(b"mp4")
+        return subprocess.CompletedProcess(command, 0, stdout="rendered", stderr="")
+
+    renderer = DockerManimRenderer(
+        artifact_root=artifacts,
+        scene_path=_scene_file(tmp_path),
+        command_runner=successful_run,
+    )
+
+    outcome = renderer.render_source(
+        "generated-job",
+        "from manim import *\nclass GeneratedLesson(Scene):\n    pass\n",
+        "GeneratedLesson",
+    )
+
+    assert outcome.video_path.name == "GeneratedLesson.mp4"
+    assert commands[0][-2:] == ["/work/render_known.py", "GeneratedLesson"]
+    metadata = json.loads((artifacts / "generated-job" / "render.json").read_text())
+    assert metadata["scene_class"] == "GeneratedLesson"
+
+
 def test_renderer_force_removes_container_after_timeout(tmp_path: Path) -> None:
     commands: list[list[str]] = []
 
