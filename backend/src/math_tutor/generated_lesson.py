@@ -155,7 +155,7 @@ class GeneratedLessonPipeline:
         self._generator = generator
         self._renderer = renderer
 
-    def render(self, job_id: str) -> RenderOutcome:
+    def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome:
         if not is_safe_job_id(job_id):
             raise GeneratedLessonError(
                 "job id is not safe for an artifact path",
@@ -163,10 +163,11 @@ class GeneratedLessonPipeline:
             )
         job_dir = self._artifact_root / job_id
         job_dir.mkdir(parents=True, exist_ok=False)
-        (job_dir / "prompt.txt").write_text(self._prompt, encoding="utf-8")
+        effective_prompt = prompt or self._prompt
+        (job_dir / "prompt.txt").write_text(effective_prompt, encoding="utf-8")
         started = monotonic()
         try:
-            result = self._generator.generate(self._prompt)
+            result = self._generator.generate(effective_prompt)
         except ProviderError as error:
             self._write_metadata(
                 job_dir,

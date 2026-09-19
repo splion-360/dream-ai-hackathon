@@ -54,18 +54,29 @@ class JobRenderer(Protocol):
     def render(self, job_id: str) -> RenderOutcome | PartialOutcome: ...
 
 
+class PromptRenderer(Protocol):
+    def render(self, job_id: str, prompt: str) -> RenderOutcome | PartialOutcome: ...
+
+
 class Renderer(Protocol):
     def render(self, job_id: str, lesson: str) -> RenderOutcome | PartialOutcome: ...
 
 
 class DispatchingRenderer:
-    def __init__(self, renderers: Mapping[str, JobRenderer]) -> None:
+    def __init__(
+        self,
+        renderers: Mapping[str, JobRenderer],
+        fallback: PromptRenderer | None = None,
+    ) -> None:
         self._renderers = dict(renderers)
+        self._fallback = fallback
 
     def render(self, job_id: str, lesson: str) -> RenderOutcome | PartialOutcome:
         try:
             renderer = self._renderers[lesson]
         except KeyError as error:
+            if self._fallback is not None:
+                return self._fallback.render(job_id, lesson)
             raise JobExecutionError(f"no renderer configured for lesson '{lesson}'") from error
         return renderer.render(job_id)
 

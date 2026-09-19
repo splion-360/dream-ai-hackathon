@@ -228,11 +228,11 @@ function LessonResult({ lesson }: { lesson: LessonJob }) {
         </div>
 
         <p className="lesson-summary">
-          {lesson.explanation ?? "The visual lesson is ready. A written explanation will appear when the model pipeline is connected."}
+          {lesson.explanation ?? `Generated visual lesson for: ${lesson.lesson}`}
         </p>
 
         <div className="proof-steps">
-          <ProofStep number="01" title="Reasoning target" formula="a² + b² = c²">
+          <ProofStep number="01" title="Reasoning target" formula={lesson.lesson}>
             Convert the prompt into a concise mathematical objective that can be explained visually.
           </ProofStep>
           <ProofStep number="02" title="Scene construction" formula="Scene → Shapes → Transformations">

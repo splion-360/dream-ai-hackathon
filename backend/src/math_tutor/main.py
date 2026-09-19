@@ -92,7 +92,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         {
             "pythagorean-theorem": pythagorean_renderer,
             "generated-demo": generated_renderer,
-        }
+        },
+        fallback=generated_renderer,
     )
     return create_app(
         LessonService(

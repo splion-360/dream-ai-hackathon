@@ -8,7 +8,7 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 from starlette.concurrency import run_in_threadpool
 
 from math_tutor.domain import LessonJob, LessonStatus
@@ -18,7 +18,18 @@ from math_tutor.narration import NarrationStatus
 
 
 class CreateLessonRequest(BaseModel):
-    lesson: Literal["pythagorean-theorem", "generated-demo"]
+    lesson: Literal["pythagorean-theorem", "generated-demo"] | None = None
+    prompt: str | None = Field(default=None, min_length=1, max_length=2_000)
+
+    @model_validator(mode="after")
+    def require_one_input(self) -> CreateLessonRequest:
+        if (self.lesson is None) == (self.prompt is None):
+            raise ValueError("provide exactly one of lesson or prompt")
+        if self.prompt is not None:
+            self.prompt = self.prompt.strip()
+            if not self.prompt:
+                raise ValueError("prompt must not be blank")
+        return self
 
 
 class ModelHealthResponse(BaseModel):
@@ -110,7 +121,7 @@ def create_app(
     )
     def submit_lesson(request: CreateLessonRequest) -> LessonResponse:
         try:
-            return to_response(service.submit(request.lesson))
+            return to_response(service.submit(request.prompt or request.lesson or ""))
         except RenderQueueFullError as error:
             raise HTTPException(
                 status_code=503,

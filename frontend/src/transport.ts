@@ -1,15 +1,13 @@
 import type { CreateLessonInput, LessonJob, LessonTransport } from "./contracts";
 
-const KNOWN_LESSON = "pythagorean-theorem";
-
 export class HttpLessonTransport implements LessonTransport {
   constructor(private readonly baseUrl = "") {}
 
-  async submitLesson(_input: CreateLessonInput): Promise<LessonJob> {
+  async submitLesson(input: CreateLessonInput): Promise<LessonJob> {
     return this.request("/lessons", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ lesson: KNOWN_LESSON }),
+      body: JSON.stringify({ prompt: input.prompt }),
     });
   }
 

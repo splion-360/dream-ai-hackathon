@@ -56,6 +56,21 @@ describe("LessonResult", () => {
     expect(screen.getByText("Lesson failed")).toBeInTheDocument();
     expect(screen.queryByTestId("lesson-video")).not.toBeInTheDocument();
   });
+
+  it("shows the submitted prompt instead of a hard-coded theorem", () => {
+    render(
+      <LessonResult
+        lesson={{
+          ...silentFallbackLesson,
+          lesson: "Explain why √2 is irrational",
+          explanation: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Explain why √2 is irrational")).toBeInTheDocument();
+    expect(screen.queryByText("a² + b² = c²")).not.toBeInTheDocument();
+  });
 });
 
 describe("App lesson flow", () => {

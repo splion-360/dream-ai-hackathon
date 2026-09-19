@@ -240,6 +240,28 @@ def test_generated_demo_uses_the_same_asynchronous_job_contract(tmp_path: Path) 
     assert ready["video_url"] is not None
 
 
+def test_typed_prompt_is_submitted_as_an_asynchronous_lesson(tmp_path: Path) -> None:
+    prompt = "Explain why the harmonic series diverges visually."
+    observed: list[str] = []
+    video = tmp_path / "prompted.mp4"
+
+    class PromptRenderer:
+        def render(self, job_id: str, lesson: str) -> RenderOutcome:
+            observed.append(lesson)
+            video.write_bytes(b"video")
+            return RenderOutcome(video, "prompt-renderer", 0.1, "rendered")
+
+    service = LessonService(renderer=PromptRenderer())
+
+    with TestClient(create_app(service)) as client:
+        submitted = client.post("/lessons", json={"prompt": prompt})
+        ready = wait_for_status(client, submitted.json()["id"], "ready")
+
+    assert submitted.status_code == 202
+    assert ready["lesson"] == prompt
+    assert observed == [prompt]
+
+
 def test_model_health_reports_exact_checkpoint_availability_without_secrets(
     tmp_path: Path,
 ) -> None:
