@@ -25,7 +25,7 @@ hf_cache = modal.Volume.from_name("dream-ai-huggingface-cache", create_if_missin
 vllm_image = (
     modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.12")
     .entrypoint([])
-    .uv_pip_install("vllm==0.11.0")
+    .uv_pip_install("vllm==0.21.0")
     .env({"HF_XET_HIGH_PERFORMANCE": "1"})
     .add_local_dir(ADAPTER_SOURCE, remote_path=ADAPTER_DESTINATION)
 )

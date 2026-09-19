@@ -9,6 +9,8 @@ from types import SimpleNamespace
 def test_modal_module_does_not_check_the_local_adapter_source_during_remote_import(
     monkeypatch,
 ) -> None:
+    installed_packages: list[str] = []
+
     class FakeImage:
         @classmethod
         def from_registry(cls, *_args: object, **_kwargs: object) -> FakeImage:
@@ -18,6 +20,7 @@ def test_modal_module_does_not_check_the_local_adapter_source_during_remote_impo
             return self
 
         def uv_pip_install(self, *_args: object) -> FakeImage:
+            installed_packages.extend(str(arg) for arg in _args)
             return self
 
         def env(self, *_args: object) -> FakeImage:
@@ -51,3 +54,5 @@ def test_modal_module_does_not_check_the_local_adapter_source_during_remote_impo
     )
 
     runpy.run_path(Path(__file__).parents[2] / "modal" / "qwen3_lora_vllm.py")
+
+    assert installed_packages == ["vllm==0.21.0"]
