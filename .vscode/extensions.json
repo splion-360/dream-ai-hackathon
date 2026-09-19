@@ -2,6 +2,6 @@
   "recommendations": [
     "charliermarsh.ruff",
     "ms-python.python",
-    "denoland.vscode-deno"
+    "ms-python.debugpy"
   ]
 }
