@@ -29,6 +29,22 @@ class GeneratedLesson(Scene):
         self.play(Write(MathTex(r"x^2")))
 """
 
+VOICEOVER_SCENE = """from manim import *
+from manim_voiceover import VoiceoverScene
+from manim_voiceover.services.elevenlabs import ElevenLabsService
+
+class GeneratedLesson(VoiceoverScene):
+    def construct(self):
+        self.set_speech_service(ElevenLabsService(voice_id="voice-id"))
+        circle = Circle()
+        with self.voiceover(text="Draw the circle.") as tracker:
+            self.play(Create(circle), run_time=tracker.duration)
+        with self.voiceover(text="Move it right.") as tracker:
+            self.play(circle.animate.shift(RIGHT), run_time=tracker.duration)
+        with self.voiceover(text="Now remove it.") as tracker:
+            self.play(FadeOut(circle), run_time=tracker.duration)
+"""
+
 
 class FixedGenerator:
     def __init__(self, result: GenerationResult) -> None:
@@ -83,6 +99,62 @@ def test_extracts_one_python_fence_and_validates_generated_scene() -> None:
 
     assert extracted.source == VALID_SCENE.rstrip()
     assert extracted.scene_class == "GeneratedLesson"
+
+
+def test_accepts_voiceover_scene_with_three_timed_narration_blocks() -> None:
+    extracted = extract_and_validate_scene(
+        f"```python\n{VOICEOVER_SCENE}```",
+        voiceover=True,
+    )
+
+    assert extracted.source == VOICEOVER_SCENE.rstrip()
+
+
+@pytest.mark.parametrize(
+    ("source", "voiceover", "message"),
+    [
+        (VALID_SCENE, True, "inherit directly from VoiceoverScene"),
+        (VOICEOVER_SCENE, False, "inherit directly from Scene"),
+        (
+            VOICEOVER_SCENE.replace(
+                "from manim_voiceover import VoiceoverScene",
+                "import os\nfrom manim_voiceover import VoiceoverScene",
+            ),
+            True,
+            "import 'os' is not allowed",
+        ),
+        (
+            VOICEOVER_SCENE.replace(
+                "        with self.voiceover",
+                "        open('/tmp/x')\n        with self.voiceover",
+                1,
+            ),
+            True,
+            "call 'open' is not allowed",
+        ),
+    ],
+)
+def test_voiceover_validation_rejects_wrong_mode_and_unsafe_code(
+    source: str,
+    voiceover: bool,
+    message: str,
+) -> None:
+    with pytest.raises(SceneValidationError, match=message):
+        extract_and_validate_scene(f"```python\n{source}```", voiceover=voiceover)
+
+
+def test_voiceover_validation_requires_three_to_six_blocks_and_tracker_duration() -> None:
+    one_block = VOICEOVER_SCENE.split(
+        '        with self.voiceover(text="Move it right.") as tracker:'
+    )[0]
+    one_block += "\n"
+
+    with pytest.raises(SceneValidationError, match="3 to 6 voiceover blocks"):
+        extract_and_validate_scene(f"```python\n{one_block}```", voiceover=True)
+
+    without_duration = VOICEOVER_SCENE.replace("tracker.duration", "1")
+    with pytest.raises(SceneValidationError, match="tracker.duration"):
+        extract_and_validate_scene(f"```python\n{without_duration}```", voiceover=True)
 
 
 def test_rejects_ambiguous_multiple_code_fences() -> None:

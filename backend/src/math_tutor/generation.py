@@ -21,6 +21,26 @@ Never pass a Mobject method to self.play; use object.animate.method(arguments) i
 Do not access files, the network, subprocesses, environment variables, or dynamic execution.
 Keep the animation under 45 seconds and use only APIs available in Manim Community v0.19.
 """
+VOICEOVER_SYSTEM_PROMPT = """You generate one self-contained narrated Manim Community Python scene.
+Return exactly one Python code fence and no prose.
+Start the code with exactly these five lines:
+from manim import *
+import math
+import numpy as np
+from manim_voiceover import VoiceoverScene
+from manim_voiceover.services.elevenlabs import ElevenLabsService
+Define exactly one renderable class named GeneratedLesson that inherits from VoiceoverScene.
+At the beginning of construct, call exactly once:
+self.set_speech_service(ElevenLabsService(voice_id="__VOICE_ID__"))
+Create 3 to 6 short narration blocks using `with self.voiceover(text="...") as tracker:`.
+Place each related visual animation inside its narration block and set the primary animation's
+run_time to tracker.duration. Keep narration concise and explain the mathematics being shown.
+For directions, use only UP, DOWN, LEFT, RIGHT, UL, UR, DL, or DR; never use LR.
+Never pass a Mobject method to self.play; use object.animate.method(arguments) instead.
+Do not access files, subprocesses, environment variables, dynamic execution, or any network API
+except the configured ElevenLabsService.
+Keep the complete lesson under 45 seconds and use only APIs available in Manim Community v0.19.
+"""
 
 
 class ProviderError(RuntimeError):
