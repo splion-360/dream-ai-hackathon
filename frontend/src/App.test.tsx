@@ -67,10 +67,14 @@ describe("App lesson flow", () => {
     ]);
     render(<App transport={transport} pollIntervalMs={0} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /create visual lesson/i }));
+    expect(screen.getByText("Lesson composer / 01")).toBeInTheDocument();
+    expect(screen.getByText("Formalized expression")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /generate lesson/i }));
 
     expect(await screen.findByText("Narrated lesson ready")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /create visual lesson/i })).toBeEnabled();
+    expect(screen.getByText("Synchronized captions")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /generate lesson/i })).toBeEnabled();
   });
 
   it("re-enables submission when polling fails", async () => {
@@ -84,11 +88,11 @@ describe("App lesson flow", () => {
     };
     render(<App transport={transport} pollIntervalMs={0} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /create visual lesson/i }));
+    fireEvent.click(screen.getByRole("button", { name: /generate lesson/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("polling unavailable");
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /create visual lesson/i })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: /generate lesson/i })).toBeEnabled(),
     );
   });
 });
