@@ -1,73 +1,71 @@
-# Dream AI Math Tutor
+# Math Tutor
 
-The repository is split by application surface:
+**Turn a math question into a visual, narrated lesson.**
 
-- `backend/` — FastAPI, model generation, Manim rendering, narration, evaluation data, and tests.
-- `frontend/` — React and Vite lesson interface.
-- `docs/` — local design and research material; only `.gitkeep` is tracked.
+Math Tutor helps learners understand ideas that are difficult to explain with text alone. A learner can ask about anything from the Pythagorean theorem to Fourier transforms. The product writes a visual explanation, renders it as a Manim video, and adds spoken narration and captions.
 
-See [`backend/README.md`](backend/README.md) for API setup, narration behavior, rendering,
-and backend verification.
+## The problem
 
-## Run the complete local stack
+Most AI tutors answer a math question with more text. That can work for a short calculation, but it often falls short when the learner needs to see a shape move, a graph change, or a proof unfold one step at a time.
 
-Docker Compose 2.24 or newer is required so the optional secrets file can be omitted. Copy
-`backend/.env.example` to `backend/.env`, add the provider credentials you want to use, and
-pre-pull the pinned renderer image before the first lesson:
+Making a good visual lesson by hand takes time. It requires mathematical knowledge, animation code, rendering tools, and clear narration. We want to make that process available from a single prompt.
 
-```bash
-docker pull manimcommunity/manim@sha256:ab5ad56cf685d89da96e5d459e0cde3743fbdf2141be4dcff6c26566b5ca3191
-```
+## What we are building
 
-Then start both applications from the repository root. The command relies on `PWD` so the
-backend and host Docker daemon see identical artifact paths:
+A learner writes a question in plain language or LaTeX. Math Tutor then:
 
-```bash
-docker compose up --build
-```
+1. Chooses a model trained for the right level of difficulty.
+2. Generates an explanation and Manim animation code.
+3. Checks the code before running it.
+4. Renders the animation in an isolated container.
+5. Adds ElevenLabs narration and captions.
+6. Returns the video, explanation, source code, and routing details.
 
-Open the frontend at <http://localhost:5173>. FastAPI is available at
-<http://localhost:8000>, and generated artifacts remain under `backend/artifacts/`.
-Stop the stack with `docker compose down`.
+![A learner prompt moves through routing, generation, validation, Manim rendering, narration, and assembly to become a visual lesson.](assets/readme/product-flow.svg)
 
-If frontend dependencies change and the existing `node_modules` volume becomes stale, recreate
-the development volumes with `docker compose down --volumes`, then start the stack again.
+If narration or audio assembly fails, the learner still receives the silent video and useful error details. If rendering fails, the explanation and generated code remain available.
 
-The backend uses the host Docker daemon to create one short-lived, network-isolated Manim
-container per valid uncached render. Consequently, local Compose mounts the Docker socket and
-the repository at the same absolute path inside the backend container. This is appropriate for
-local development and a controlled single-host demo, but not for an untrusted multi-tenant
-deployment. The backend runs as root so it can reach the host socket across Docker Desktop and
-Linux installations; on native Linux, rendered bind-mount files may therefore be root-owned. A
-production deployment should isolate rendering behind a dedicated non-root worker rather than
-mounting the control-plane Docker socket into the API container.
+## Learning at different levels
 
-Both application Dockerfiles include production build targets. The frontend production target
-serves its static build through Nginx and proxies API routes to a service named `backend`; the
-backend production target disables source reload. Deployment orchestration and a dedicated
-render worker remain part of the deployment ticket rather than the local Compose contract.
-Build those targets independently with `docker build --target production backend` and
-`docker build --target production frontend`.
+One model should not explain every topic in exactly the same way. A basic geometry question and an advanced analysis question may need different language, pacing, and visual choices.
 
-## Run the frontend
+We start with Qwen3-4B and train three small LoRA adapters:
 
-Start FastAPI on port 8000, then install and run the frontend:
+- **Foundational** — introductory ideas and shorter visual lessons.
+- **Intermediate** — multi-step explanations and richer scenes.
+- **Advanced** — denser notation, proofs, and higher-level topics.
 
-```bash
-cd frontend
-npm ci
-npm run dev
-```
+A LoRA adapter is a small set of learned changes placed on top of the same base model. This lets us create specialists without training or storing three complete models. A router chooses one specialist for each request.
 
-Vite proxies `/lessons` to FastAPI. The browser talks only to the lesson API and never
-receives Nebius or ElevenLabs credentials. The current submission transport uses the bundled
-Pythagorean fixture until arbitrary prompt generation is connected.
+![Training examples are divided into three difficulty groups and used to train three LoRA specialists on the same Qwen3-4B base model.](assets/readme/training-pipeline.svg)
 
-Verify the frontend with:
+Today, these are three fixed specialists. The current route comes from the known or requested difficulty. Learning the route automatically—and deciding when a new specialist is useful—is the next research step.
 
-```bash
-cd frontend
-npm test
-npm run typecheck
-npm run build
-```
+## Results so far
+
+We prepared **995 prompt-and-Manim examples** and used **895 for training** and **100 for validation**. All three specialist training jobs completed successfully.
+
+| Specialist | Training examples | Validation examples | First validation loss | Final validation loss |
+| --- | ---: | ---: | ---: | ---: |
+| Foundational | 302 | 34 | 0.668 | **0.494** |
+| Intermediate | 299 | 33 | 0.566 | **0.457** |
+| Advanced | 294 | 33 | 0.510 | **0.435** |
+
+Lower validation loss means the model became better at matching the held-out examples. These numbers show that training worked; they do **not** yet prove that every generated video is correct. Our next evaluation measures whether the code parses, follows the lesson request, and renders successfully on the first attempt.
+
+## Why this approach matters
+
+- **Visual first:** the answer is an animation, not only a block of text.
+- **Broad subject range:** the product is intended for both foundational and advanced mathematics.
+- **Specialized explanations:** each request can use the model best suited to its difficulty.
+- **Safer execution:** generated Python is checked and rendered without network access.
+- **Useful fallbacks:** one failed step does not have to erase the rest of the lesson.
+- **Visible reasoning path:** the interface can show which specialist handled the request.
+
+## Current state
+
+The web experience, FastAPI service, Manim rendering, ElevenLabs narration, captions, and three trained LoRA adapters are in place. We are connecting the adapters to a GPU inference service and measuring their effect on code quality and render success.
+
+## Built with
+
+Qwen3-4B · LoRA · FastAPI · React · Manim · ElevenLabs · Docker · FFmpeg
