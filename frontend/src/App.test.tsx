@@ -33,6 +33,25 @@ describe("LessonResult", () => {
       "src",
       "/lessons/demo/captions",
     );
+    expect(screen.queryByText("Scene 03 · visual proof")).not.toBeInTheDocument();
+    expect(screen.queryByText("Synchronized captions")).not.toBeInTheDocument();
+  });
+
+  it("lets the user toggle captions off", () => {
+    render(<LessonResult lesson={narratedLesson} />);
+
+    fireEvent.click(screen.getByLabelText("Captions"));
+
+    expect(screen.queryByTitle("English captions")).not.toBeInTheDocument();
+  });
+
+  it("shows generated Manim code inside the main artifact panel", () => {
+    render(<LessonResult lesson={narratedLesson} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "</>" }));
+
+    expect(screen.getByText("Generated Manim · Python")).toBeInTheDocument();
+    expect(screen.getByText(/MathTex/)).toBeInTheDocument();
   });
 
   it("presents silent fallback as a successful lesson", () => {
@@ -68,7 +87,7 @@ describe("LessonResult", () => {
       />,
     );
 
-    expect(screen.getByText("Explain why √2 is irrational")).toBeInTheDocument();
+    expect(screen.getByText("Generated visual lesson for: Explain why √2 is irrational")).toBeInTheDocument();
     expect(screen.queryByText("a² + b² = c²")).not.toBeInTheDocument();
   });
 });
@@ -89,7 +108,7 @@ describe("App lesson flow", () => {
 
     expect(await screen.findByText("Narrated lesson ready")).toBeInTheDocument();
     expect(screen.getByText("Generated visual lesson")).toBeInTheDocument();
-    expect(screen.getByText("Synchronized captions")).toBeInTheDocument();
+    expect(screen.getByText("Captions on")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /generate lesson/i })).toBeEnabled();
   });
 
