@@ -131,6 +131,45 @@ describe("LessonResult", () => {
     expect(screen.getByText("advanced")).toBeInTheDocument();
     expect(screen.getByText("Explicit specialist route")).toBeInTheDocument();
   });
+
+  it("labels automatically inferred LoRA routing honestly", () => {
+    render(
+      <LessonResult
+        lesson={{
+          ...narratedLesson,
+          difficulty: "advanced",
+          diagnostics: {
+            inference_path: "lora_adapter",
+            inference_model: "advanced",
+            routing_policy: "automatic_heuristic",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("LoRA specialist")).toBeInTheDocument();
+    expect(screen.getByText("Automatic heuristic")).toBeInTheDocument();
+  });
+
+  it("shows when an inferred specialist fell back to the base model", () => {
+    render(
+      <LessonResult
+        lesson={{
+          ...narratedLesson,
+          difficulty: "intermediate",
+          diagnostics: {
+            inference_path: "base_model",
+            inference_model: "Qwen/Qwen3-4B",
+            routing_policy: "automatic_heuristic",
+            routing_fallback: "base_model",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Base model")).toBeInTheDocument();
+    expect(screen.getByText("Automatic heuristic · base fallback")).toBeInTheDocument();
+  });
 });
 
 describe("App lesson flow", () => {

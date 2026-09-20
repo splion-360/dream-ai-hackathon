@@ -393,9 +393,14 @@ function InferenceRouting({ lesson }: { lesson: LessonJob }) {
   const model = readText(lesson.diagnostics, ["inference_model"])
     ?? (usesAdapter ? lesson.difficulty : "Qwen/Qwen3-4B");
   const policy = readText(lesson.diagnostics, ["routing_policy"]);
-  const route = policy === "explicit_difficulty" || usesAdapter
-    ? "Explicit specialist route"
-    : "Default synchronized path";
+  const fallback = readText(lesson.diagnostics, ["routing_fallback"]);
+  const route = policy === "automatic_heuristic"
+    ? fallback === "base_model"
+      ? "Automatic heuristic · base fallback"
+      : "Automatic heuristic"
+    : policy === "explicit_difficulty" || usesAdapter
+      ? "Explicit specialist route"
+      : "Default synchronized path";
 
   return (
     <div className="adapter-routing">

@@ -10,6 +10,7 @@ from math_tutor.generated_lesson import (
     ExtractionError,
     GeneratedLessonError,
     GeneratedLessonPipeline,
+    GenerationFallbackRenderer,
     SceneValidationError,
     VoiceoverFallbackRenderer,
     extract_and_validate_scene,
@@ -294,7 +295,6 @@ def test_pipeline_persists_generation_evidence_before_isolated_render(tmp_path: 
     assert outcome.narration_diagnostics == {
         "inference_path": "base_model",
         "inference_model": "Qwen/Qwen3-4B",
-        "routing_policy": "default",
     }
     assert source_renderer.received == (
         "generated-123",
@@ -340,12 +340,9 @@ def test_pipeline_reports_explicit_lora_route(tmp_path: Path) -> None:
     pipeline = GeneratedLessonPipeline(
         artifact_root=tmp_path / "artifacts",
         prompt="Explain Fourier transforms.",
-        generator=FixedGenerator(
-            _generation(f"```python\n{VALID_SCENE}```", model="advanced")
-        ),
+        generator=FixedGenerator(_generation(f"```python\n{VALID_SCENE}```", model="advanced")),
         renderer=RecordingSourceRenderer(tmp_path / "lesson.mp4"),
         inference_path="lora_adapter",
-        routing_policy="explicit_difficulty",
     )
 
     outcome = pipeline.render("lora-123")
@@ -353,7 +350,6 @@ def test_pipeline_reports_explicit_lora_route(tmp_path: Path) -> None:
     assert outcome.narration_diagnostics == {
         "inference_path": "lora_adapter",
         "inference_model": "advanced",
-        "routing_policy": "explicit_difficulty",
     }
 
 
@@ -455,3 +451,32 @@ def test_voiceover_fallback_does_not_retry_generation_failure(tmp_path: Path) ->
         )
 
     assert fallback.calls == []
+
+
+def test_generation_fallback_uses_base_model_and_reports_specialist_failure(
+    tmp_path: Path,
+) -> None:
+    primary = RecordingPromptRenderer(GeneratedLessonError("specialist timed out"))
+    fallback_outcome = RenderOutcome(
+        tmp_path / "base.mp4",
+        "base",
+        1,
+        "rendered",
+        narration_diagnostics={
+            "inference_path": "base_model",
+            "inference_model": "Qwen/Qwen3-4B",
+        },
+    )
+    fallback = RecordingPromptRenderer(fallback_outcome)
+
+    result = GenerationFallbackRenderer(primary=primary, fallback=fallback).render(
+        "job-4", "Explain limits"
+    )
+
+    assert result.narration_diagnostics == {
+        "inference_path": "base_model",
+        "inference_model": "Qwen/Qwen3-4B",
+        "routing_fallback": "base_model",
+        "specialist_error": "specialist timed out",
+    }
+    assert fallback.calls == [("job-4-base", "Explain limits")]

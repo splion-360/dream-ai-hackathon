@@ -15,6 +15,7 @@ from math_tutor.domain import Difficulty, LessonJob, LessonStatus
 from math_tutor.generation import FROZEN_MODEL, ModelHealth
 from math_tutor.jobs import JobNotFoundError, LessonService, RenderQueueFullError
 from math_tutor.narration import NarrationStatus
+from math_tutor.routing import infer_difficulty
 
 
 class CreateLessonRequest(BaseModel):
@@ -60,9 +61,7 @@ class LessonResponse(BaseModel):
 
 def to_response(job: LessonJob) -> LessonResponse:
     video_url = f"/lessons/{job.id}/video" if job.video_path else None
-    silent_video_url = (
-        f"/lessons/{job.id}/video/silent" if job.silent_video_path else None
-    )
+    silent_video_url = f"/lessons/{job.id}/video/silent" if job.silent_video_path else None
     captions_url = f"/lessons/{job.id}/captions" if job.captions_path else None
     return LessonResponse(
         id=job.id,
@@ -123,11 +122,20 @@ def create_app(
         status_code=status.HTTP_202_ACCEPTED,
     )
     def submit_lesson(request: CreateLessonRequest) -> LessonResponse:
+        difficulty = request.difficulty
+        routing_policy = "default"
+        if request.prompt is not None:
+            if difficulty is None:
+                difficulty = infer_difficulty(request.prompt)
+                routing_policy = "automatic_heuristic"
+            else:
+                routing_policy = "explicit_difficulty"
         try:
             return to_response(
                 service.submit(
                     request.prompt or request.lesson or "",
-                    difficulty=request.difficulty if request.prompt is not None else None,
+                    difficulty=difficulty if request.prompt is not None else None,
+                    routing_policy=routing_policy,
                 )
             )
         except RenderQueueFullError as error:

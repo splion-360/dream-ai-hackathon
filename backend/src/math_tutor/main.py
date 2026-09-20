@@ -10,6 +10,7 @@ from math_tutor.domain import Difficulty
 from math_tutor.elevenlabs import ElevenLabsNarrationProvider
 from math_tutor.generated_lesson import (
     GeneratedLessonPipeline,
+    GenerationFallbackRenderer,
     PromptLessonRenderer,
     VoiceoverFallbackRenderer,
 )
@@ -215,15 +216,18 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 renderer=modal_renderer,
                 voiceover=bool(elevenlabs_api_key),
                 inference_path="lora_adapter",
-                routing_policy="explicit_difficulty",
             )
-            routed_renderers[difficulty] = (
+            specialist_renderer = (
                 VoiceoverFallbackRenderer(
                     primary=modal_pipeline,
                     fallback=silent_generated_renderer,
                 )
                 if elevenlabs_api_key
                 else modal_pipeline
+            )
+            routed_renderers[difficulty] = GenerationFallbackRenderer(
+                primary=specialist_renderer,
+                fallback=generated_renderer,
             )
     dispatcher = DispatchingRenderer(
         {

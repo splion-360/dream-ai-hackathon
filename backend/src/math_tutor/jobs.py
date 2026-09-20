@@ -100,6 +100,7 @@ class JobStore:
         *,
         difficulty: Difficulty | None = None,
         narration_requested: bool = False,
+        routing_policy: str = "default",
     ) -> LessonJob:
         job = LessonJob(
             id=uuid4().hex,
@@ -108,10 +109,9 @@ class JobStore:
             created_at=utc_now(),
             difficulty=difficulty,
             narration_status=(
-                NarrationStatus.PENDING
-                if narration_requested
-                else NarrationStatus.NOT_REQUESTED
+                NarrationStatus.PENDING if narration_requested else NarrationStatus.NOT_REQUESTED
             ),
+            diagnostics=({"routing_policy": routing_policy} if routing_policy != "default" else {}),
         )
         with self._lock:
             self._jobs[job.id] = job
@@ -148,6 +148,7 @@ class JobStore:
                 ),
                 narration_status=outcome.narration_status,
                 diagnostics={
+                    **dict(job.diagnostics),
                     "renderer": outcome.renderer,
                     "elapsed_seconds": outcome.elapsed_seconds,
                     "logs": outcome.logs,
@@ -165,7 +166,7 @@ class JobStore:
                 status=LessonStatus.FAILED,
                 completed_at=utc_now(),
                 error=str(error),
-                diagnostics=diagnostics,
+                diagnostics={**dict(job.diagnostics), **diagnostics},
             ),
         )
 
@@ -178,6 +179,7 @@ class JobStore:
                 completed_at=utc_now(),
                 error=outcome.error,
                 diagnostics={
+                    **dict(job.diagnostics),
                     "renderer": outcome.renderer,
                     "elapsed_seconds": outcome.elapsed_seconds,
                     "logs": outcome.logs,
@@ -221,7 +223,13 @@ class LessonService:
         self._narration_requested = narration_requested
         self._routed_renderers = dict(routed_renderers or {})
 
-    def submit(self, lesson: str, *, difficulty: Difficulty | None = None) -> LessonJob:
+    def submit(
+        self,
+        lesson: str,
+        *,
+        difficulty: Difficulty | None = None,
+        routing_policy: str = "default",
+    ) -> LessonJob:
         if not self._capacity.acquire(blocking=False):
             raise RenderQueueFullError("render queue is full")
         narration_requested = (
@@ -233,6 +241,7 @@ class LessonService:
             lesson,
             difficulty=difficulty,
             narration_requested=narration_requested,
+            routing_policy=routing_policy,
         )
         try:
             self._executor.submit(self._run, job.id)

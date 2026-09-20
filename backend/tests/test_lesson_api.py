@@ -4,6 +4,7 @@ from pathlib import Path
 from threading import Event
 from time import monotonic, sleep
 
+import pytest
 from fastapi.testclient import TestClient
 
 from math_tutor.api import create_app
@@ -297,11 +298,51 @@ def test_explicit_difficulty_routes_prompt_to_matching_specialist(tmp_path: Path
 
     assert submitted.status_code == 202
     assert ready["difficulty"] == "advanced"
+    assert ready["diagnostics"]["routing_policy"] == "explicit_difficulty"
     assert ready["diagnostics"]["renderer"] == "advanced-specialist"
     assert default.prompts == []
-    assert advanced.prompts == [
-        "Visualize the Fourier transform solution to the heat equation."
-    ]
+    assert advanced.prompts == ["Visualize the Fourier transform solution to the heat equation."]
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected_difficulty"),
+    [
+        ("Explain how to add two fractions.", Difficulty.FOUNDATIONAL),
+        ("Visualize the quadratic formula.", Difficulty.INTERMEDIATE),
+        (
+            "Explain the Fourier transform solution to the heat equation.",
+            Difficulty.ADVANCED,
+        ),
+    ],
+)
+def test_unlabeled_prompt_is_automatically_routed_by_difficulty(
+    tmp_path: Path,
+    prompt: str,
+    expected_difficulty: Difficulty,
+) -> None:
+    videos = {difficulty: tmp_path / f"{difficulty.value}.mp4" for difficulty in Difficulty}
+
+    class RecordingRenderer:
+        def __init__(self, difficulty: Difficulty) -> None:
+            self.difficulty = difficulty
+
+        def render(self, job_id: str, lesson: str) -> RenderOutcome:
+            video = videos[self.difficulty]
+            video.write_bytes(b"video")
+            return RenderOutcome(video, self.difficulty.value, 0.1, "rendered")
+
+    service = LessonService(
+        renderer=RecordingRenderer(Difficulty.INTERMEDIATE),
+        routed_renderers={difficulty: RecordingRenderer(difficulty) for difficulty in Difficulty},
+    )
+
+    with TestClient(create_app(service)) as client:
+        submitted = client.post("/lessons", json={"prompt": prompt})
+        ready = wait_for_status(client, submitted.json()["id"], "ready")
+
+    assert ready["difficulty"] == expected_difficulty.value
+    assert ready["diagnostics"]["renderer"] == expected_difficulty.value
+    assert ready["diagnostics"]["routing_policy"] == "automatic_heuristic"
 
 
 def test_model_health_reports_exact_checkpoint_availability_without_secrets(

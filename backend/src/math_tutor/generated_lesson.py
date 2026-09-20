@@ -70,7 +70,6 @@ class PromptLessonRenderer(Protocol):
 
 
 InferencePath = Literal["base_model", "lora_adapter"]
-RoutingPolicy = Literal["default", "explicit_difficulty"]
 
 
 class VoiceoverFallbackRenderer:
@@ -94,6 +93,31 @@ class VoiceoverFallbackRenderer:
                 narration_diagnostics={"voiceover_error": str(error)},
             )
         return replace(outcome, narration_status=NarrationStatus.READY)
+
+
+class GenerationFallbackRenderer:
+    def __init__(
+        self,
+        *,
+        primary: PromptLessonRenderer,
+        fallback: PromptLessonRenderer,
+    ) -> None:
+        self._primary = primary
+        self._fallback = fallback
+
+    def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome:
+        try:
+            return self._primary.render(job_id, prompt)
+        except (GeneratedLessonError, RenderError) as error:
+            outcome = self._fallback.render(f"{job_id}-base", prompt)
+            return replace(
+                outcome,
+                narration_diagnostics={
+                    **dict(outcome.narration_diagnostics or {}),
+                    "routing_fallback": "base_model",
+                    "specialist_error": str(error),
+                },
+            )
 
 
 def extract_and_validate_scene(
@@ -276,7 +300,6 @@ class GeneratedLessonPipeline:
         renderer: SourceRenderer,
         voiceover: bool = False,
         inference_path: InferencePath = "base_model",
-        routing_policy: RoutingPolicy = "default",
     ) -> None:
         self._artifact_root = artifact_root.resolve()
         self._prompt = prompt
@@ -284,7 +307,6 @@ class GeneratedLessonPipeline:
         self._renderer = renderer
         self._voiceover = voiceover
         self._inference_path = inference_path
-        self._routing_policy = routing_policy
 
     def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome:
         if not is_safe_job_id(job_id):
@@ -357,7 +379,6 @@ class GeneratedLessonPipeline:
                 **dict(outcome.narration_diagnostics or {}),
                 "inference_path": self._inference_path,
                 "inference_model": result.model,
-                "routing_policy": self._routing_policy,
             },
         )
 
