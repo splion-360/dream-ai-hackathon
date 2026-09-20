@@ -60,5 +60,6 @@ def test_modal_module_does_not_check_the_local_adapter_source_during_remote_impo
     runpy.run_path(Path(__file__).parents[2] / "modal" / "qwen3_lora_vllm.py")
 
     assert installed_packages == ["vllm==0.21.0"]
+    assert function_options["min_containers"] == 1
     assert function_options["max_containers"] == 1
     assert web_server_options["requires_proxy_auth"] is True

@@ -171,6 +171,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         )
         modal_base_config = GenerationConfig(
             model=FROZEN_MODEL,
+            max_tokens=resolved.modal_vllm_max_tokens,
             system_prompt=(
                 VOICEOVER_SYSTEM_PROMPT.replace(
                     "__VOICE_ID__",
@@ -201,6 +202,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         for difficulty in Difficulty:
             modal_config = GenerationConfig(
                 model=difficulty.value,
+                max_tokens=resolved.modal_vllm_max_tokens,
                 system_prompt=(
                     VOICEOVER_SYSTEM_PROMPT.replace(
                         "__VOICE_ID__",

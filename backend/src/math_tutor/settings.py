@@ -22,7 +22,8 @@ class Settings(BaseSettings):
     nebius_model: str = DEMO_INFERENCE_MODEL
     modal_vllm_base_url: str | None = None
     modal_vllm_api_key: SecretStr | None = None
-    modal_vllm_timeout_seconds: float = Field(default=360, gt=0)
+    modal_vllm_timeout_seconds: float = Field(default=120, gt=0)
+    modal_vllm_max_tokens: int = Field(default=2048, gt=0)
     elevenlabs_voice_id: str = "Xb7hH8MSUJpSbSDYk0k2"
     artifact_root: Path = Path("artifacts")
     render_timeout_seconds: float = Field(default=90, gt=0)

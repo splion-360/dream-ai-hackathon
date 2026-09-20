@@ -34,6 +34,7 @@ vllm_image = (
 @app.function(
     image=vllm_image,
     gpu="L4",
+    min_containers=1,
     max_containers=1,
     scaledown_window=15 * 60,
     timeout=20 * 60,
