@@ -214,6 +214,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 generator=modal_client,
                 renderer=modal_renderer,
                 voiceover=bool(elevenlabs_api_key),
+                inference_path="lora_adapter",
+                routing_policy="explicit_difficulty",
             )
             routed_renderers[difficulty] = (
                 VoiceoverFallbackRenderer(

@@ -71,7 +71,7 @@ export function App({ transport = defaultTransport, pollIntervalMs = 700 }: AppP
             <small>Visual math studio</small>
           </span>
         </a>
-        <span className="engine-pill">Specialist LoRA + Manim + ElevenLabs</span>
+        <span className="engine-pill">Modal Qwen · LoRA specialists · Manim</span>
       </header>
 
       <section className="workspace-grid">
@@ -370,9 +370,9 @@ function SupportTabs({ lesson }: { lesson: LessonJob | null }) {
               </p>
             </section>
             <section className="detail-card adapter-card">
-              <p className="section-kicker">Adapter routing</p>
-              <h2>Dynamic LoRA trace</h2>
-              <AdapterRouting diagnostics={lesson.diagnostics} />
+              <p className="section-kicker">Model routing</p>
+              <h2>Inference trace</h2>
+              <InferenceRouting lesson={lesson} />
             </section>
           </article>
         ) : (
@@ -385,24 +385,31 @@ function SupportTabs({ lesson }: { lesson: LessonJob | null }) {
   );
 }
 
-function AdapterRouting({ diagnostics }: { diagnostics: Record<string, unknown> }) {
-  const adapter = readText(diagnostics, ["adapter", "adapter_id", "selected_adapter"]) ?? "Pending";
-  const route = readText(diagnostics, ["route", "router_path", "topic"]) ?? "No route reported yet";
-  const confidence = readPercent(diagnostics, ["confidence", "router_confidence"]);
+function InferenceRouting({ lesson }: { lesson: LessonJob }) {
+  const reportedPath = readText(lesson.diagnostics, ["inference_path"]);
+  const usesAdapter = reportedPath === "lora_adapter" || (
+    reportedPath === null && lesson.difficulty != null
+  );
+  const model = readText(lesson.diagnostics, ["inference_model"])
+    ?? (usesAdapter ? lesson.difficulty : "Qwen/Qwen3-4B");
+  const policy = readText(lesson.diagnostics, ["routing_policy"]);
+  const route = policy === "explicit_difficulty" || usesAdapter
+    ? "Explicit specialist route"
+    : "Default synchronized path";
 
   return (
     <div className="adapter-routing">
       <div>
-        <span>Selected adapter</span>
-        <strong>{adapter}</strong>
+        <span>Inference</span>
+        <strong>{usesAdapter ? "LoRA specialist" : "Base model"}</strong>
       </div>
       <div>
-        <span>Route</span>
+        <span>Model or adapter</span>
+        <strong>{model}</strong>
+      </div>
+      <div>
+        <span>Routing</span>
         <strong>{route}</strong>
-      </div>
-      <div>
-        <span>Confidence</span>
-        <strong>{confidence === null ? "Pending" : `${confidence}%`}</strong>
       </div>
     </div>
   );

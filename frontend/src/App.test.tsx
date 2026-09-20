@@ -90,6 +90,47 @@ describe("LessonResult", () => {
     expect(screen.getByText("Generated visual lesson for: Explain why √2 is irrational")).toBeInTheDocument();
     expect(screen.queryByText("a² + b² = c²")).not.toBeInTheDocument();
   });
+
+  it("shows the actual base-model inference route", () => {
+    render(
+      <LessonResult
+        lesson={{
+          ...narratedLesson,
+          diagnostics: {
+            inference_path: "base_model",
+            inference_model: "Qwen/Qwen3-4B",
+            routing_policy: "default",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Inference trace")).toBeInTheDocument();
+    expect(screen.getByText("Base model")).toBeInTheDocument();
+    expect(screen.getByText("Qwen/Qwen3-4B")).toBeInTheDocument();
+    expect(screen.getByText("Default synchronized path")).toBeInTheDocument();
+    expect(screen.queryByText("Dynamic LoRA trace")).not.toBeInTheDocument();
+  });
+
+  it("shows the selected LoRA specialist when one was explicitly routed", () => {
+    render(
+      <LessonResult
+        lesson={{
+          ...narratedLesson,
+          difficulty: "advanced",
+          diagnostics: {
+            inference_path: "lora_adapter",
+            inference_model: "advanced",
+            routing_policy: "explicit_difficulty",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("LoRA specialist")).toBeInTheDocument();
+    expect(screen.getByText("advanced")).toBeInTheDocument();
+    expect(screen.getByText("Explicit specialist route")).toBeInTheDocument();
+  });
 });
 
 describe("App lesson flow", () => {

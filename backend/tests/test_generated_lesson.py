@@ -103,10 +103,10 @@ class RecordingPromptRenderer:
         return self._outcome
 
 
-def _generation(content: str) -> GenerationResult:
+def _generation(content: str, *, model: str = "Qwen/Qwen3-4B") -> GenerationResult:
     return GenerationResult(
         content=content,
-        model="Qwen/Qwen3-4B",
+        model=model,
         request_id="chatcmpl-123",
         finish_reason="stop",
         usage=TokenUsage(prompt_tokens=10, completion_tokens=20, total_tokens=30),
@@ -291,6 +291,11 @@ def test_pipeline_persists_generation_evidence_before_isolated_render(tmp_path: 
     outcome = pipeline.render("generated-123")
 
     assert outcome.video_path.read_bytes() == b"video"
+    assert outcome.narration_diagnostics == {
+        "inference_path": "base_model",
+        "inference_model": "Qwen/Qwen3-4B",
+        "routing_policy": "default",
+    }
     assert source_renderer.received == (
         "generated-123",
         VALID_SCENE.rstrip(),
@@ -329,6 +334,27 @@ def test_voiceover_pipeline_marks_rendered_audio_ready(tmp_path: Path) -> None:
     outcome = pipeline.render("voiceover-123")
 
     assert outcome.narration_status is NarrationStatus.READY
+
+
+def test_pipeline_reports_explicit_lora_route(tmp_path: Path) -> None:
+    pipeline = GeneratedLessonPipeline(
+        artifact_root=tmp_path / "artifacts",
+        prompt="Explain Fourier transforms.",
+        generator=FixedGenerator(
+            _generation(f"```python\n{VALID_SCENE}```", model="advanced")
+        ),
+        renderer=RecordingSourceRenderer(tmp_path / "lesson.mp4"),
+        inference_path="lora_adapter",
+        routing_policy="explicit_difficulty",
+    )
+
+    outcome = pipeline.render("lora-123")
+
+    assert outcome.narration_diagnostics == {
+        "inference_path": "lora_adapter",
+        "inference_model": "advanced",
+        "routing_policy": "explicit_difficulty",
+    }
 
 
 def test_pipeline_preserves_raw_response_when_extraction_fails(tmp_path: Path) -> None:

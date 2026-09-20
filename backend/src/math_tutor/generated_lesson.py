@@ -6,7 +6,7 @@ import re
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from time import monotonic
-from typing import Protocol
+from typing import Literal, Protocol
 
 from math_tutor.generation import GenerationConfig, GenerationResult, ProviderError
 from math_tutor.jobs import JobExecutionError, RenderOutcome, is_safe_job_id
@@ -67,6 +67,10 @@ class SourceRenderer(Protocol):
 
 class PromptLessonRenderer(Protocol):
     def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome: ...
+
+
+InferencePath = Literal["base_model", "lora_adapter"]
+RoutingPolicy = Literal["default", "explicit_difficulty"]
 
 
 class VoiceoverFallbackRenderer:
@@ -271,12 +275,16 @@ class GeneratedLessonPipeline:
         generator: Generator,
         renderer: SourceRenderer,
         voiceover: bool = False,
+        inference_path: InferencePath = "base_model",
+        routing_policy: RoutingPolicy = "default",
     ) -> None:
         self._artifact_root = artifact_root.resolve()
         self._prompt = prompt
         self._generator = generator
         self._renderer = renderer
         self._voiceover = voiceover
+        self._inference_path = inference_path
+        self._routing_policy = routing_policy
 
     def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome:
         if not is_safe_job_id(job_id):
@@ -340,9 +348,18 @@ class GeneratedLessonPipeline:
             extracted.source,
             extracted.scene_class,
         )
-        if self._voiceover:
-            return replace(outcome, narration_status=NarrationStatus.READY)
-        return outcome
+        return replace(
+            outcome,
+            narration_status=(
+                NarrationStatus.READY if self._voiceover else outcome.narration_status
+            ),
+            narration_diagnostics={
+                **dict(outcome.narration_diagnostics or {}),
+                "inference_path": self._inference_path,
+                "inference_model": result.model,
+                "routing_policy": self._routing_policy,
+            },
+        )
 
     @staticmethod
     def _write_metadata(job_dir: Path, metadata: dict[str, object]) -> None:
