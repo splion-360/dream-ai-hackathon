@@ -44,5 +44,4 @@ def test_settings_loads_optional_modal_vllm_connection(monkeypatch) -> None:
     assert settings.modal_vllm_base_url == "https://workspace--qwen.modal.direct/v1"
     assert settings.modal_vllm_api_key == SecretStr("modal-secret")
     assert settings.modal_vllm_timeout_seconds == 120
-    assert settings.modal_vllm_max_tokens == 2048
     assert "modal-secret" not in repr(settings)

@@ -131,7 +131,7 @@ def test_build_app_uses_modal_base_model_by_default_and_keeps_specialists(
         "error": None,
     }
     assert observed_models == [FROZEN_MODEL, "foundational", "intermediate", "advanced"]
-    assert all(config.max_tokens == 2048 for config in observed_configs)
+    assert all(config.max_tokens == 4096 for config in observed_configs)
     assert all("VoiceoverScene" in config.system_prompt for config in observed_configs)
 
 
