@@ -335,11 +335,14 @@ class GeneratedLessonPipeline:
             self._write_metadata(job_dir, metadata)
             raise
         (job_dir / "extracted_scene.py").write_text(extracted.source, encoding="utf-8")
-        return self._renderer.render_source(
+        outcome = self._renderer.render_source(
             job_id,
             extracted.source,
             extracted.scene_class,
         )
+        if self._voiceover:
+            return replace(outcome, narration_status=NarrationStatus.READY)
+        return outcome
 
     @staticmethod
     def _write_metadata(job_dir: Path, metadata: dict[str, object]) -> None:

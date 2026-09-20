@@ -317,6 +317,20 @@ def test_pipeline_persists_generation_evidence_before_isolated_render(tmp_path: 
     }
 
 
+def test_voiceover_pipeline_marks_rendered_audio_ready(tmp_path: Path) -> None:
+    pipeline = GeneratedLessonPipeline(
+        artifact_root=tmp_path / "artifacts",
+        prompt="Explain circles.",
+        generator=FixedGenerator(_generation(f"```python\n{VOICEOVER_SCENE}```")),
+        renderer=RecordingSourceRenderer(tmp_path / "lesson.mp4"),
+        voiceover=True,
+    )
+
+    outcome = pipeline.render("voiceover-123")
+
+    assert outcome.narration_status is NarrationStatus.READY
+
+
 def test_pipeline_preserves_raw_response_when_extraction_fails(tmp_path: Path) -> None:
     response = _generation("I cannot provide code.")
     pipeline = GeneratedLessonPipeline(

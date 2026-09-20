@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TypeAlias
 
 from fastapi import FastAPI
 
@@ -13,6 +14,7 @@ from math_tutor.generated_lesson import (
     VoiceoverFallbackRenderer,
 )
 from math_tutor.generation import (
+    FROZEN_MODEL,
     VOICEOVER_SYSTEM_PROMPT,
     GenerationConfig,
     ModalVllmClient,
@@ -33,6 +35,7 @@ from math_tutor.settings import Settings, get_settings
 GENERATED_DEMO_PROMPT = """Create a concise visual lesson explaining why the Taylor
 series of e^x equals the function. Show the polynomial approximations building from
 orders zero through five, label the equation, and keep all objects inside the frame."""
+ModelClient: TypeAlias = NebiusTokenFactoryClient | ModalVllmClient | UnavailableModelClient
 
 
 def pythagorean_narration_plan() -> NarrationPlan:
@@ -101,8 +104,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         renderer=base_renderer,
     )
     generated_renderer: PromptLessonRenderer = silent_generated_renderer
-    health_model = silent_model
-    models_to_close = [silent_model]
+    health_model: ModelClient = silent_model
+    models_to_close: list[ModelClient] = [silent_model]
     voiceover_renderer: DockerManimRenderer | None = None
     if elevenlabs_api_key:
         voiceover_config = GenerationConfig(
@@ -154,6 +157,34 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             if resolved.modal_vllm_api_key is not None
             else ""
         )
+        modal_base_config = GenerationConfig(
+            model=FROZEN_MODEL,
+            system_prompt=(
+                VOICEOVER_SYSTEM_PROMPT.replace(
+                    "__VOICE_ID__",
+                    resolved.elevenlabs_voice_id,
+                )
+                if elevenlabs_api_key
+                else generation_config.system_prompt
+            ),
+        )
+        modal_base_client = ModalVllmClient(
+            api_key=modal_api_key,
+            config=modal_base_config,
+            base_url=resolved.modal_vllm_base_url,
+            timeout_seconds=resolved.modal_vllm_timeout_seconds,
+        )
+        models_to_close.append(modal_base_client)
+        modal_base_renderer = voiceover_renderer if elevenlabs_api_key else base_renderer
+        assert modal_base_renderer is not None
+        generated_renderer = GeneratedLessonPipeline(
+            artifact_root=resolved.artifact_root,
+            prompt=GENERATED_DEMO_PROMPT,
+            generator=modal_base_client,
+            renderer=modal_base_renderer,
+            voiceover=bool(elevenlabs_api_key),
+        )
+        health_model = modal_base_client
         for difficulty in Difficulty:
             modal_config = GenerationConfig(
                 model=difficulty.value,
@@ -199,17 +230,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         },
         fallback=generated_renderer,
     )
+
     def close_models() -> None:
         for configured_model in models_to_close:
             configured_model.close()
         for modal_client in modal_clients.values():
             modal_client.close()
 
-    model_health = (
-        modal_clients[Difficulty.FOUNDATIONAL].health
-        if modal_clients
-        else health_model.health
-    )
     return create_app(
         LessonService(
             renderer=dispatcher,
@@ -217,7 +244,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             routed_renderers=routed_renderers,
             narration_requested=bool(elevenlabs_api_key),
         ),
-        model_health=model_health,
+        model_health=health_model.health,
         close_model=close_models,
     )
 

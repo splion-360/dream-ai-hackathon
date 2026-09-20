@@ -243,6 +243,7 @@ class ModalVllmClient:
                     "top_p": self.config.top_p,
                     "max_tokens": self.config.max_tokens,
                     "seed": self.config.seed,
+                    "chat_template_kwargs": {"enable_thinking": False},
                 },
             )
         except httpx.HTTPError as error:

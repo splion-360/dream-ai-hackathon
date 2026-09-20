@@ -199,6 +199,7 @@ def test_modal_vllm_sends_selected_adapter_to_openai_compatible_endpoint() -> No
             "top_p": 1.0,
             "max_tokens": 4096,
             "seed": 42,
+            "chat_template_kwargs": {"enable_thinking": False},
         },
     }
     assert result.model == "advanced"

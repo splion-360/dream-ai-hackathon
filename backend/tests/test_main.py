@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from math_tutor.generation import GenerationConfig, GenerationResult, ModelHealth
+from math_tutor.generation import FROZEN_MODEL, GenerationConfig, GenerationResult, ModelHealth
 from math_tutor.renderer import VOICEOVER_MANIM_IMAGE
 from math_tutor.settings import Settings
 
@@ -77,11 +77,12 @@ def test_build_app_without_secret_keeps_provider_unavailable(tmp_path: Path) -> 
     }
 
 
-def test_build_app_configures_one_modal_client_per_difficulty(
+def test_build_app_uses_modal_base_model_by_default_and_keeps_specialists(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     observed_models: list[str] = []
+    observed_configs: list[GenerationConfig] = []
 
     class RecordingModalClient:
         def __init__(
@@ -96,6 +97,7 @@ def test_build_app_configures_one_modal_client_per_difficulty(
             assert base_url == "https://workspace--qwen.modal.direct/v1"
             assert timeout_seconds == 90
             observed_models.append(config.model)
+            observed_configs.append(config)
             self.config = config
 
         def generate(self, prompt: str) -> GenerationResult:
@@ -115,13 +117,21 @@ def test_build_app_configures_one_modal_client_per_difficulty(
         modal_vllm_base_url="https://workspace--qwen.modal.direct/v1",
         modal_vllm_api_key="modal-secret",
         modal_vllm_timeout_seconds=90,
+        elevenlabs_api_key="eleven-secret",
         artifact_root=tmp_path / "artifacts",
     )
 
-    app = main.build_app(settings)
+    with TestClient(main.build_app(settings)) as client:
+        health = client.get("/model/health")
 
-    assert app is not None
-    assert observed_models == ["foundational", "intermediate", "advanced"]
+    assert health.json() == {
+        "reachable": True,
+        "model": FROZEN_MODEL,
+        "model_available": True,
+        "error": None,
+    }
+    assert observed_models == [FROZEN_MODEL, "foundational", "intermediate", "advanced"]
+    assert all("VoiceoverScene" in config.system_prompt for config in observed_configs)
 
 
 def test_build_app_configures_voiceover_generation_when_elevenlabs_is_available(
