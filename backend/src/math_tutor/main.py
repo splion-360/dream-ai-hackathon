@@ -10,12 +10,13 @@ from math_tutor.domain import Difficulty, LessonStage
 from math_tutor.elevenlabs import ElevenLabsNarrationProvider
 from math_tutor.generated_lesson import (
     GeneratedLessonPipeline,
-    GenerationFallbackRenderer,
     PromptLessonRenderer,
+    SpecialistGuidedLessonPipeline,
     VoiceoverFallbackRenderer,
 )
 from math_tutor.generation import (
     FROZEN_MODEL,
+    SPECIALIST_SYSTEM_PROMPT,
     VOICEOVER_SYSTEM_PROMPT,
     GenerationConfig,
     ModalVllmClient,
@@ -59,7 +60,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     def report_stage(pipeline_job_id: str, stage: LessonStage) -> None:
         job_id = pipeline_job_id
-        for suffix in ("-base", "-silent"):
+        for suffix in ("-base", "-silent", "-normalized"):
             if job_id.endswith(suffix):
                 job_id = job_id[: -len(suffix)]
         job_store.mark_stage(job_id, stage)
@@ -201,46 +202,20 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         for difficulty in Difficulty:
             modal_config = GenerationConfig(
                 model=difficulty.value,
-                system_prompt=(
-                    VOICEOVER_SYSTEM_PROMPT.replace(
-                        "__VOICE_ID__",
-                        resolved.elevenlabs_voice_id,
-                    )
-                    if elevenlabs_api_key
-                    else generation_config.system_prompt
-                ),
+                system_prompt=SPECIALIST_SYSTEM_PROMPT,
             )
             modal_client = ModalVllmClient(
                 api_key=modal_api_key,
                 config=modal_config,
                 base_url=resolved.modal_vllm_base_url,
-                timeout_seconds=resolved.modal_vllm_timeout_seconds,
+                timeout_seconds=resolved.modal_specialist_timeout_seconds,
             )
             modal_clients[difficulty] = modal_client
-            modal_renderer = base_renderer
-            if elevenlabs_api_key:
-                assert voiceover_renderer is not None
-                modal_renderer = voiceover_renderer
-            modal_pipeline = GeneratedLessonPipeline(
+            routed_renderers[difficulty] = SpecialistGuidedLessonPipeline(
                 artifact_root=resolved.artifact_root,
-                prompt=GENERATED_DEMO_PROMPT,
-                generator=modal_client,
-                renderer=modal_renderer,
-                voiceover=bool(elevenlabs_api_key),
-                inference_path="lora_adapter",
+                specialist=modal_client,
+                normalizer=generated_renderer,
                 stage_reporter=report_stage,
-            )
-            specialist_renderer = (
-                VoiceoverFallbackRenderer(
-                    primary=modal_pipeline,
-                    fallback=silent_generated_renderer,
-                )
-                if elevenlabs_api_key
-                else modal_pipeline
-            )
-            routed_renderers[difficulty] = GenerationFallbackRenderer(
-                primary=specialist_renderer,
-                fallback=generated_renderer,
             )
     dispatcher = DispatchingRenderer(
         {

@@ -174,6 +174,28 @@ describe("LessonResult", () => {
     expect(screen.getByText("Automatic heuristic")).toBeInTheDocument();
   });
 
+  it("shows when a LoRA draft is normalized by the base model", () => {
+    render(
+      <LessonResult
+        lesson={{
+          ...narratedLesson,
+          difficulty: "intermediate",
+          diagnostics: {
+            inference_path: "lora_adapter_with_base_normalizer",
+            inference_model: "Qwen/Qwen3-4B",
+            specialist_model: "intermediate",
+            normalization_model: "Qwen/Qwen3-4B",
+            routing_policy: "automatic_heuristic",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("LoRA specialist + base normalizer")).toBeInTheDocument();
+    expect(screen.getByText("intermediate → Qwen/Qwen3-4B")).toBeInTheDocument();
+    expect(screen.getByText("Automatic heuristic")).toBeInTheDocument();
+  });
+
   it("shows when an inferred specialist fell back to the base model", () => {
     render(
       <LessonResult
@@ -192,6 +214,26 @@ describe("LessonResult", () => {
 
     expect(screen.getByText("Base model")).toBeInTheDocument();
     expect(screen.getByText("Automatic heuristic · base fallback")).toBeInTheDocument();
+  });
+
+  it("shows when an explicitly selected specialist fell back to the base model", () => {
+    render(
+      <LessonResult
+        lesson={{
+          ...narratedLesson,
+          difficulty: "advanced",
+          diagnostics: {
+            inference_path: "base_model",
+            inference_model: "Qwen/Qwen3-4B",
+            routing_policy: "explicit_difficulty",
+            routing_fallback: "base_model",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Base model")).toBeInTheDocument();
+    expect(screen.getByText("Explicit specialist route · base fallback")).toBeInTheDocument();
   });
 });
 

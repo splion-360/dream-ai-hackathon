@@ -414,11 +414,18 @@ function SupportTabs({ lesson }: { lesson: LessonJob | null }) {
 
 function InferenceRouting({ lesson }: { lesson: LessonJob }) {
   const reportedPath = readText(lesson.diagnostics, ["inference_path"]);
-  const usesAdapter = reportedPath === "lora_adapter" || (
+  const usesBaseNormalizer = reportedPath === "lora_adapter_with_base_normalizer";
+  const usesAdapter = reportedPath === "lora_adapter" || usesBaseNormalizer || (
     reportedPath === null && lesson.difficulty != null
   );
-  const model = readText(lesson.diagnostics, ["inference_model"])
-    ?? (usesAdapter ? lesson.difficulty : "Qwen/Qwen3-4B");
+  const inferenceModel = readText(lesson.diagnostics, ["inference_model"]);
+  const specialistModel = readText(lesson.diagnostics, ["specialist_model"])
+    ?? lesson.difficulty;
+  const normalizationModel = readText(lesson.diagnostics, ["normalization_model"])
+    ?? inferenceModel;
+  const model = usesBaseNormalizer
+    ? `${specialistModel ?? "LoRA specialist"} → ${normalizationModel ?? "base model"}`
+    : inferenceModel ?? (usesAdapter ? lesson.difficulty : "Qwen/Qwen3-4B");
   const policy = readText(lesson.diagnostics, ["routing_policy"]);
   const fallback = readText(lesson.diagnostics, ["routing_fallback"]);
   const route = policy === "automatic_heuristic"
@@ -426,14 +433,20 @@ function InferenceRouting({ lesson }: { lesson: LessonJob }) {
       ? "Automatic heuristic · base fallback"
       : "Automatic heuristic"
     : policy === "explicit_difficulty" || usesAdapter
-      ? "Explicit specialist route"
+      ? fallback === "base_model"
+        ? "Explicit specialist route · base fallback"
+        : "Explicit specialist route"
       : "Default synchronized path";
 
   return (
     <div className="adapter-routing">
       <div>
         <span>Inference</span>
-        <strong>{usesAdapter ? "LoRA specialist" : "Base model"}</strong>
+        <strong>
+          {usesBaseNormalizer
+            ? "LoRA specialist + base normalizer"
+            : usesAdapter ? "LoRA specialist" : "Base model"}
+        </strong>
       </div>
       <div>
         <span>Model or adapter</span>

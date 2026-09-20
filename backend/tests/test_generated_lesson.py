@@ -13,6 +13,7 @@ from math_tutor.generated_lesson import (
     GeneratedLessonPipeline,
     GenerationFallbackRenderer,
     SceneValidationError,
+    SpecialistGuidedLessonPipeline,
     VoiceoverFallbackRenderer,
     extract_and_validate_scene,
 )
@@ -93,6 +94,19 @@ class FailingGenerator:
         raise ProviderError("provider unavailable")
 
 
+class RecordingGenerator:
+    def __init__(self, result: GenerationResult | Exception) -> None:
+        self.config = GenerationConfig(model="intermediate")
+        self._result = result
+        self.prompts: list[str] = []
+
+    def generate(self, prompt: str) -> GenerationResult:
+        self.prompts.append(prompt)
+        if isinstance(self._result, Exception):
+            raise self._result
+        return self._result
+
+
 class RecordingPromptRenderer:
     def __init__(self, outcome: RenderOutcome | Exception) -> None:
         self._outcome = outcome
@@ -103,6 +117,19 @@ class RecordingPromptRenderer:
         if isinstance(self._outcome, Exception):
             raise self._outcome
         return self._outcome
+
+
+class SequencePromptRenderer:
+    def __init__(self, outcomes: list[RenderOutcome | Exception]) -> None:
+        self._outcomes = iter(outcomes)
+        self.calls: list[tuple[str, str | None]] = []
+
+    def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome:
+        self.calls.append((job_id, prompt))
+        outcome = next(self._outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
 
 def _generation(content: str, *, model: str = "Qwen/Qwen3-4B") -> GenerationResult:
@@ -500,3 +527,147 @@ def test_generation_fallback_uses_base_model_and_reports_specialist_failure(
         "specialist_error": "specialist timed out",
     }
     assert fallback.calls == [("job-4-base", "Explain limits")]
+
+
+def test_specialist_guidance_is_normalized_by_base_pipeline(tmp_path: Path) -> None:
+    specialist_draft = "```python\nfrom manim import *\nclass Draft(Scene):\n    pass\n```"
+    specialist = RecordingGenerator(_generation(specialist_draft, model="intermediate"))
+    normalized = RenderOutcome(
+        tmp_path / "normalized.mp4",
+        "voiceover",
+        1,
+        "rendered",
+        narration_diagnostics={
+            "inference_path": "base_model",
+            "inference_model": "Qwen/Qwen3-4B",
+        },
+    )
+    normalizer = RecordingPromptRenderer(normalized)
+    pipeline = SpecialistGuidedLessonPipeline(
+        artifact_root=tmp_path / "artifacts",
+        specialist=specialist,
+        normalizer=normalizer,
+    )
+
+    result = pipeline.render("job-5", "Explain completing the square visually.")
+
+    assert specialist.prompts == ["Explain completing the square visually."]
+    assert normalizer.calls[0][0] == "job-5-normalized"
+    normalization_prompt = normalizer.calls[0][1]
+    assert normalization_prompt is not None
+    assert "Explain completing the square visually." in normalization_prompt
+    assert specialist_draft in normalization_prompt
+    assert "mathematical and visual guidance" in normalization_prompt
+    assert result.narration_diagnostics == {
+        "inference_path": "lora_adapter_with_base_normalizer",
+        "inference_model": "Qwen/Qwen3-4B",
+        "specialist_model": "intermediate",
+        "normalization_model": "Qwen/Qwen3-4B",
+        "specialist_elapsed_seconds": 0.5,
+        "specialist_completion_tokens": 20,
+    }
+    job_dir = tmp_path / "artifacts" / "job-5"
+    assert (job_dir / "prompt.txt").read_text() == ("Explain completing the square visually.")
+    assert (job_dir / "specialist_response.txt").read_text() == specialist_draft
+    metadata = json.loads((job_dir / "specialist_generation.json").read_text())
+    assert metadata["status"] == "generated"
+    assert metadata["model"] == "intermediate"
+
+
+def test_specialist_failure_falls_back_once_to_direct_base_generation(
+    tmp_path: Path,
+) -> None:
+    specialist = RecordingGenerator(ProviderError("specialist timed out"))
+    base = RenderOutcome(
+        tmp_path / "base.mp4",
+        "voiceover",
+        1,
+        "rendered",
+        narration_diagnostics={
+            "inference_path": "base_model",
+            "inference_model": "Qwen/Qwen3-4B",
+        },
+    )
+    normalizer = RecordingPromptRenderer(base)
+    pipeline = SpecialistGuidedLessonPipeline(
+        artifact_root=tmp_path / "artifacts",
+        specialist=specialist,
+        normalizer=normalizer,
+    )
+
+    result = pipeline.render("job-6", "Explain limits visually.")
+
+    assert normalizer.calls == [("job-6-base", "Explain limits visually.")]
+    assert result.narration_diagnostics == {
+        "inference_path": "base_model",
+        "inference_model": "Qwen/Qwen3-4B",
+        "routing_fallback": "base_model",
+        "specialist_model": "intermediate",
+        "specialist_error": "Modal specialist generation could not be completed",
+    }
+    metadata = json.loads(
+        (tmp_path / "artifacts" / "job-6" / "specialist_generation.json").read_text()
+    )
+    assert metadata["status"] == "provider_failed"
+    assert metadata["failure_stage"] == "specialist_generation"
+
+
+def test_normalization_failure_retries_original_prompt_through_base_model(
+    tmp_path: Path,
+) -> None:
+    specialist = RecordingGenerator(_generation("raw scene", model="advanced"))
+    base = RenderOutcome(
+        tmp_path / "base.mp4",
+        "voiceover",
+        1,
+        "rendered",
+        narration_diagnostics={
+            "inference_path": "base_model",
+            "inference_model": "Qwen/Qwen3-4B",
+        },
+    )
+    normalizer = SequencePromptRenderer(
+        [SceneValidationError("normalized scene was invalid"), base]
+    )
+    pipeline = SpecialistGuidedLessonPipeline(
+        artifact_root=tmp_path / "artifacts",
+        specialist=specialist,
+        normalizer=normalizer,
+    )
+
+    result = pipeline.render("job-7", "Explain eigenvectors visually.")
+
+    assert normalizer.calls[0][0] == "job-7-normalized"
+    assert normalizer.calls[1] == ("job-7-base", "Explain eigenvectors visually.")
+    assert result.narration_diagnostics == {
+        "inference_path": "base_model",
+        "inference_model": "Qwen/Qwen3-4B",
+        "routing_fallback": "base_model",
+        "specialist_model": "advanced",
+        "normalization_error": "normalized scene was invalid",
+    }
+
+
+def test_failed_base_fallback_reports_pipeline_context(tmp_path: Path) -> None:
+    specialist = RecordingGenerator(ProviderError("specialist timed out"))
+    normalizer = RecordingPromptRenderer(
+        SceneValidationError(
+            "base scene was invalid",
+            diagnostics={"failure_stage": "validation"},
+        )
+    )
+    pipeline = SpecialistGuidedLessonPipeline(
+        artifact_root=tmp_path / "artifacts",
+        specialist=specialist,
+        normalizer=normalizer,
+    )
+
+    with pytest.raises(GeneratedLessonError) as caught:
+        pipeline.render("job-8", "Explain tensors visually.")
+
+    assert str(caught.value) == "base model could not generate the final lesson"
+    assert caught.value.diagnostics == {
+        "failure_stage": "validation",
+        "pipeline_stage": "base_fallback",
+        "specialist_model": "intermediate",
+    }

@@ -8,6 +8,10 @@ import httpx
 
 FROZEN_MODEL = "Qwen/Qwen3-4B"
 DEMO_INFERENCE_MODEL = "Qwen/Qwen3-30B-A3B-Instruct-2507"
+SPECIALIST_SYSTEM_PROMPT = (
+    "You generate concise, runnable Manim Community Edition Python scenes for math tutoring. "
+    "Return only Python code."
+)
 SYSTEM_PROMPT = """You generate one self-contained Manim Community Python scene.
 Return exactly one Python code fence and no prose.
 The code must import only from manim, math, or numpy.

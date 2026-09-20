@@ -4,7 +4,13 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from math_tutor.generation import FROZEN_MODEL, GenerationConfig, GenerationResult, ModelHealth
+from math_tutor.generation import (
+    FROZEN_MODEL,
+    SPECIALIST_SYSTEM_PROMPT,
+    GenerationConfig,
+    GenerationResult,
+    ModelHealth,
+)
 from math_tutor.renderer import VOICEOVER_MANIM_IMAGE
 from math_tutor.settings import Settings
 
@@ -83,6 +89,7 @@ def test_build_app_uses_modal_base_model_by_default_and_keeps_specialists(
 ) -> None:
     observed_models: list[str] = []
     observed_configs: list[GenerationConfig] = []
+    observed_timeouts: list[float] = []
 
     class RecordingModalClient:
         def __init__(
@@ -95,9 +102,9 @@ def test_build_app_uses_modal_base_model_by_default_and_keeps_specialists(
         ) -> None:
             assert api_key == "modal-secret"
             assert base_url == "https://workspace--qwen.modal.direct/v1"
-            assert timeout_seconds == 90
             observed_models.append(config.model)
             observed_configs.append(config)
+            observed_timeouts.append(timeout_seconds)
             self.config = config
 
         def generate(self, prompt: str) -> GenerationResult:
@@ -117,6 +124,7 @@ def test_build_app_uses_modal_base_model_by_default_and_keeps_specialists(
         modal_vllm_base_url="https://workspace--qwen.modal.direct/v1",
         modal_vllm_api_key="modal-secret",
         modal_vllm_timeout_seconds=90,
+        modal_specialist_timeout_seconds=60,
         elevenlabs_api_key="eleven-secret",
         artifact_root=tmp_path / "artifacts",
     )
@@ -131,8 +139,10 @@ def test_build_app_uses_modal_base_model_by_default_and_keeps_specialists(
         "error": None,
     }
     assert observed_models == [FROZEN_MODEL, "foundational", "intermediate", "advanced"]
+    assert observed_timeouts == [90, 60, 60, 60]
     assert all(config.max_tokens == 4096 for config in observed_configs)
-    assert all("VoiceoverScene" in config.system_prompt for config in observed_configs)
+    assert "VoiceoverScene" in observed_configs[0].system_prompt
+    assert all(config.system_prompt == SPECIALIST_SYSTEM_PROMPT for config in observed_configs[1:])
 
 
 def test_build_app_configures_voiceover_generation_when_elevenlabs_is_available(
