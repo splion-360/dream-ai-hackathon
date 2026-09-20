@@ -3,11 +3,13 @@ from __future__ import annotations
 import ast
 import json
 import re
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from time import monotonic
 from typing import Literal, Protocol
 
+from math_tutor.domain import LessonStage
 from math_tutor.generation import GenerationConfig, GenerationResult, ProviderError
 from math_tutor.jobs import JobExecutionError, RenderOutcome, is_safe_job_id
 from math_tutor.narration import NarrationStatus
@@ -300,6 +302,7 @@ class GeneratedLessonPipeline:
         renderer: SourceRenderer,
         voiceover: bool = False,
         inference_path: InferencePath = "base_model",
+        stage_reporter: Callable[[str, LessonStage], None] | None = None,
     ) -> None:
         self._artifact_root = artifact_root.resolve()
         self._prompt = prompt
@@ -307,6 +310,7 @@ class GeneratedLessonPipeline:
         self._renderer = renderer
         self._voiceover = voiceover
         self._inference_path = inference_path
+        self._stage_reporter = stage_reporter
 
     def render(self, job_id: str, prompt: str | None = None) -> RenderOutcome:
         if not is_safe_job_id(job_id):
@@ -319,6 +323,7 @@ class GeneratedLessonPipeline:
         effective_prompt = prompt or self._prompt
         (job_dir / "prompt.txt").write_text(effective_prompt, encoding="utf-8")
         started = monotonic()
+        self._report_stage(job_id, LessonStage.GENERATING_CODE)
         try:
             result = self._generator.generate(effective_prompt)
         except ProviderError as error:
@@ -355,6 +360,7 @@ class GeneratedLessonPipeline:
             **asdict(result.usage),
         }
         self._write_metadata(job_dir, metadata)
+        self._report_stage(job_id, LessonStage.VALIDATING_CODE)
         try:
             extracted = extract_and_validate_scene(
                 result.content,
@@ -365,6 +371,7 @@ class GeneratedLessonPipeline:
             self._write_metadata(job_dir, metadata)
             raise
         (job_dir / "extracted_scene.py").write_text(extracted.source, encoding="utf-8")
+        self._report_stage(job_id, LessonStage.RENDERING)
         outcome = self._renderer.render_source(
             job_id,
             extracted.source,
@@ -381,6 +388,10 @@ class GeneratedLessonPipeline:
                 "inference_model": result.model,
             },
         )
+
+    def _report_stage(self, job_id: str, stage: LessonStage) -> None:
+        if self._stage_reporter is not None:
+            self._stage_reporter(job_id, stage)
 
     @staticmethod
     def _write_metadata(job_dir: Path, metadata: dict[str, object]) -> None:

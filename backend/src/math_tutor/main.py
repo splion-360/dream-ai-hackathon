@@ -6,7 +6,7 @@ from typing import TypeAlias
 from fastapi import FastAPI
 
 from math_tutor.api import create_app
-from math_tutor.domain import Difficulty
+from math_tutor.domain import Difficulty, LessonStage
 from math_tutor.elevenlabs import ElevenLabsNarrationProvider
 from math_tutor.generated_lesson import (
     GeneratedLessonPipeline,
@@ -22,7 +22,7 @@ from math_tutor.generation import (
     NebiusTokenFactoryClient,
     UnavailableModelClient,
 )
-from math_tutor.jobs import DispatchingRenderer, JobRenderer, LessonService
+from math_tutor.jobs import DispatchingRenderer, JobRenderer, JobStore, LessonService
 from math_tutor.lesson_narration import NarratingRenderer
 from math_tutor.media import MediaAssembler, probe_audio_duration
 from math_tutor.narration import NarrationPlan, NarrationSegment
@@ -55,6 +55,15 @@ def pythagorean_narration_plan() -> NarrationPlan:
 def build_app(settings: Settings | None = None) -> FastAPI:
     resolved = settings or get_settings()
     package_root = Path(__file__).parent
+    job_store = JobStore()
+
+    def report_stage(pipeline_job_id: str, stage: LessonStage) -> None:
+        job_id = pipeline_job_id
+        for suffix in ("-base", "-silent"):
+            if job_id.endswith(suffix):
+                job_id = job_id[: -len(suffix)]
+        job_store.mark_stage(job_id, stage)
+
     base_renderer = DockerManimRenderer(
         artifact_root=resolved.artifact_root,
         scene_path=package_root / "scenes" / "pythagorean_theorem.py",
@@ -103,6 +112,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         prompt=GENERATED_DEMO_PROMPT,
         generator=silent_model,
         renderer=base_renderer,
+        stage_reporter=report_stage,
     )
     generated_renderer: PromptLessonRenderer = silent_generated_renderer
     health_model: ModelClient = silent_model
@@ -145,6 +155,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             generator=voiceover_model,
             renderer=voiceover_renderer,
             voiceover=True,
+            stage_reporter=report_stage,
         )
         generated_renderer = VoiceoverFallbackRenderer(
             primary=voiceover_generated_renderer,
@@ -184,6 +195,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             generator=modal_base_client,
             renderer=modal_base_renderer,
             voiceover=bool(elevenlabs_api_key),
+            stage_reporter=report_stage,
         )
         health_model = modal_base_client
         for difficulty in Difficulty:
@@ -216,6 +228,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 renderer=modal_renderer,
                 voiceover=bool(elevenlabs_api_key),
                 inference_path="lora_adapter",
+                stage_reporter=report_stage,
             )
             specialist_renderer = (
                 VoiceoverFallbackRenderer(
@@ -246,6 +259,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     return create_app(
         LessonService(
             renderer=dispatcher,
+            store=job_store,
             max_pending_jobs=resolved.max_pending_jobs,
             routed_renderers=routed_renderers,
             narration_requested=bool(elevenlabs_api_key),

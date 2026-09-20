@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, model_validator
 from starlette.concurrency import run_in_threadpool
 
-from math_tutor.domain import Difficulty, LessonJob, LessonStatus
+from math_tutor.domain import Difficulty, LessonJob, LessonStage, LessonStatus
 from math_tutor.generation import FROZEN_MODEL, ModelHealth
 from math_tutor.jobs import JobNotFoundError, LessonService, RenderQueueFullError
 from math_tutor.narration import NarrationStatus
@@ -45,6 +45,7 @@ class LessonResponse(BaseModel):
     id: str
     lesson: str
     status: LessonStatus
+    stage: LessonStage
     created_at: datetime
     difficulty: Difficulty | None
     started_at: datetime | None
@@ -63,10 +64,16 @@ def to_response(job: LessonJob) -> LessonResponse:
     video_url = f"/lessons/{job.id}/video" if job.video_path else None
     silent_video_url = f"/lessons/{job.id}/video/silent" if job.silent_video_path else None
     captions_url = f"/lessons/{job.id}/captions" if job.captions_path else None
+    public_error = job.error
+    if job.status is LessonStatus.FAILED:
+        public_error = "We couldn't generate this lesson. Please try again."
+    elif job.status is LessonStatus.PARTIAL:
+        public_error = "Some lesson assets could not be generated."
     return LessonResponse(
         id=job.id,
         lesson=job.lesson,
         status=job.status,
+        stage=job.stage,
         created_at=job.created_at,
         difficulty=job.difficulty,
         started_at=job.started_at,
@@ -78,7 +85,7 @@ def to_response(job: LessonJob) -> LessonResponse:
         explanation=job.explanation,
         generated_code=job.generated_code,
         diagnostics=dict(job.diagnostics),
-        error=job.error,
+        error=public_error,
     )
 
 

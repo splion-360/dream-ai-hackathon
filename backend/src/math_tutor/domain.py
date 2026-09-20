@@ -21,6 +21,15 @@ class LessonStatus(StrEnum):
     FAILED = "failed"
 
 
+class LessonStage(StrEnum):
+    ROUTING = "routing"
+    GENERATING_CODE = "generating_code"
+    VALIDATING_CODE = "validating_code"
+    RENDERING = "rendering"
+    READY = "ready"
+    FAILED = "failed"
+
+
 class Difficulty(StrEnum):
     FOUNDATIONAL = "foundational"
     INTERMEDIATE = "intermediate"
@@ -32,6 +41,7 @@ class LessonJob:
     id: str
     lesson: str
     status: LessonStatus
+    stage: LessonStage
     created_at: datetime
     difficulty: Difficulty | None = None
     started_at: datetime | None = None

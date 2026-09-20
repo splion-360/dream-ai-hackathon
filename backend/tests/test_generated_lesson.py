@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from math_tutor.domain import LessonStage
 from math_tutor.generated_lesson import (
     ExtractionError,
     GeneratedLessonError,
@@ -320,6 +321,25 @@ def test_pipeline_persists_generation_evidence_before_isolated_render(tmp_path: 
         "top_p": 1.0,
         "total_tokens": 30,
     }
+
+
+def test_pipeline_reports_each_generation_stage(tmp_path: Path) -> None:
+    observed: list[tuple[str, LessonStage]] = []
+    pipeline = GeneratedLessonPipeline(
+        artifact_root=tmp_path / "artifacts",
+        prompt="Explain the derivative visually.",
+        generator=FixedGenerator(_generation(f"```python\n{VALID_SCENE}```")),
+        renderer=RecordingSourceRenderer(tmp_path / "lesson.mp4"),
+        stage_reporter=lambda job_id, stage: observed.append((job_id, stage)),
+    )
+
+    pipeline.render("staged-123")
+
+    assert observed == [
+        ("staged-123", LessonStage.GENERATING_CODE),
+        ("staged-123", LessonStage.VALIDATING_CODE),
+        ("staged-123", LessonStage.RENDERING),
+    ]
 
 
 def test_voiceover_pipeline_marks_rendered_audio_ready(tmp_path: Path) -> None:

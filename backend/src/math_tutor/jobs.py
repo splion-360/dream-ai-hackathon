@@ -9,7 +9,7 @@ from threading import BoundedSemaphore, Lock
 from typing import Protocol
 from uuid import uuid4
 
-from math_tutor.domain import Difficulty, LessonJob, LessonStatus, utc_now
+from math_tutor.domain import Difficulty, LessonJob, LessonStage, LessonStatus, utc_now
 from math_tutor.narration import NarrationStatus
 
 _SAFE_JOB_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -106,6 +106,7 @@ class JobStore:
             id=uuid4().hex,
             lesson=lesson,
             status=LessonStatus.QUEUED,
+            stage=LessonStage.ROUTING,
             created_at=utc_now(),
             difficulty=difficulty,
             narration_status=(
@@ -134,12 +135,16 @@ class JobStore:
             ),
         )
 
+    def mark_stage(self, job_id: str, stage: LessonStage) -> LessonJob:
+        return self._mutate(job_id, lambda job: replace(job, stage=stage))
+
     def mark_ready(self, job_id: str, outcome: RenderOutcome) -> LessonJob:
         return self._mutate(
             job_id,
             lambda job: replace(
                 job,
                 status=LessonStatus.READY,
+                stage=LessonStage.READY,
                 completed_at=utc_now(),
                 video_path=str(outcome.video_path),
                 silent_video_path=str(outcome.silent_video_path or outcome.video_path),
@@ -164,6 +169,7 @@ class JobStore:
             lambda job: replace(
                 job,
                 status=LessonStatus.FAILED,
+                stage=LessonStage.FAILED,
                 completed_at=utc_now(),
                 error=str(error),
                 diagnostics={**dict(job.diagnostics), **diagnostics},
@@ -176,6 +182,7 @@ class JobStore:
             lambda job: replace(
                 job,
                 status=LessonStatus.PARTIAL,
+                stage=LessonStage.FAILED,
                 completed_at=utc_now(),
                 error=outcome.error,
                 diagnostics={

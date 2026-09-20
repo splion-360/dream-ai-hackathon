@@ -1,6 +1,12 @@
 import { type FormEvent, useRef, useState } from "react";
 
-import type { LessonJob, LessonStatus, LessonTransport, NarrationStatus } from "./contracts";
+import type {
+  LessonJob,
+  LessonStage,
+  LessonStatus,
+  LessonTransport,
+  NarrationStatus,
+} from "./contracts";
 import { isTerminal } from "./contracts";
 import { HttpLessonTransport } from "./transport";
 import "./styles.css";
@@ -21,11 +27,27 @@ const examples = [
 ];
 
 const progressSteps = [
-  "Parse prompt",
-  "Generate Manim",
-  "Render video",
-  "Add narration/captions",
+  "Route prompt",
+  "Generate code",
+  "Validate code",
+  "Render + narrate",
 ];
+
+const stageOrder: LessonStage[] = [
+  "routing",
+  "generating_code",
+  "validating_code",
+  "rendering",
+];
+
+const stageLabels: Record<LessonStage, string> = {
+  routing: "Routing prompt",
+  generating_code: "Generating code",
+  validating_code: "Validating code",
+  rendering: "Rendering + narrating",
+  ready: "Ready",
+  failed: "Failed",
+};
 
 export function App({ transport = defaultTransport, pollIntervalMs = 700 }: AppProps) {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
@@ -258,32 +280,37 @@ function EmptyVideo() {
 }
 
 function GeneratingVideo({ lesson }: { lesson: LessonJob; busy: boolean }) {
-  const progress = truthfulProgress(lesson);
+  const activeStage = stageOrder.indexOf(lesson.stage);
+  const progress = activeStage < 0 ? 100 : ((activeStage + 0.5) / stageOrder.length) * 100;
   const heading = lesson.status === "queued"
     ? "Queued for a render worker"
-    : "Rendering your visual lesson";
-  const phase = lesson.status === "queued" ? "Queued" : "Rendering";
+    : stageLabels[lesson.stage];
+  const phase = lesson.status === "queued" ? "Queued" : stageLabels[lesson.stage];
 
   return (
     <div className="video-stage video-generating">
       <div className="generation-topline">
         <span>{lesson.lesson}</span>
-        <span>{progress === null ? phase : `${progress}%`}</span>
+        <span>{phase}</span>
       </div>
       <div className="generation-center">
         <span className="spinner-mark">∑</span>
         <h3>{heading}</h3>
-        <div className={progress === null ? "progress-track is-indeterminate" : "progress-track"}>
-          <span style={progress === null ? undefined : { width: `${progress}%` }} />
+        <div className="progress-track">
+          <span style={{ width: `${progress}%` }} />
         </div>
       </div>
       <div className="inline-steps">
         {progressSteps.map((step, index) => {
-          const threshold = [10, 32, 68, 90][index] ?? 100;
+          const className = index < activeStage
+            ? "is-complete"
+            : index === activeStage
+              ? "is-active"
+              : "";
           return (
             <div
               key={step}
-              className={progress !== null && progress >= threshold ? "is-complete" : ""}
+              className={className}
             >
               <span />
               <p>{index + 1}. {step}</p>
@@ -342,16 +369,16 @@ function PartialVideo({ lesson }: { lesson: LessonJob }) {
   return (
     <div className="video-stage video-partial">
       <h3>Video render timed out</h3>
-      <p>{lesson.error ?? "The render timed out, but useful lesson assets are preserved."}</p>
+      <p>Some lesson assets could not be generated, but the available output is preserved.</p>
     </div>
   );
 }
 
-function FailedVideo({ lesson }: { lesson: LessonJob }) {
+function FailedVideo({ lesson: _lesson }: { lesson: LessonJob }) {
   return (
     <div className="video-stage video-failed">
       <h3>Generation stopped</h3>
-      <p>{lesson.error ?? "The lesson could not be generated."}</p>
+      <p>We couldn't generate this lesson. Please try again.</p>
     </div>
   );
 }
@@ -456,24 +483,10 @@ function artifactStatus(lesson: LessonJob | null, captionsEnabled: boolean) {
   return captionsEnabled ? "Captions on" : "Captions off";
 }
 
-function truthfulProgress(lesson: LessonJob) {
-  return readPercent(lesson.diagnostics, ["progress_percent", "progress"]);
-}
-
 function readText(record: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = record[key];
     if (typeof value === "string" && value.trim()) return value;
-  }
-  return null;
-}
-
-function readPercent(record: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value !== "number" || Number.isNaN(value)) continue;
-    const normalized = value > 0 && value <= 1 ? value * 100 : value;
-    if (normalized >= 0 && normalized <= 100) return Math.round(normalized);
   }
   return null;
 }

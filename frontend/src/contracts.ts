@@ -1,5 +1,13 @@
 export type LessonStatus = "queued" | "running" | "ready" | "partial" | "failed";
 
+export type LessonStage =
+  | "routing"
+  | "generating_code"
+  | "validating_code"
+  | "rendering"
+  | "ready"
+  | "failed";
+
 export type Difficulty = "foundational" | "intermediate" | "advanced";
 
 export type NarrationStatus =
@@ -12,6 +20,7 @@ export interface LessonJob {
   id: string;
   lesson: string;
   status: LessonStatus;
+  stage: LessonStage;
   created_at: string;
   difficulty?: Difficulty | null;
   started_at: string | null;

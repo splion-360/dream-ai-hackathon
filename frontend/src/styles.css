@@ -432,8 +432,13 @@ textarea:focus {
   background: rgba(255, 255, 255, 0.16);
 }
 
-.inline-steps .is-complete span {
+.inline-steps .is-complete span,
+.inline-steps .is-active span {
   background: var(--primary);
+}
+
+.inline-steps .is-active p {
+  color: var(--primary);
 }
 
 .inline-steps p {

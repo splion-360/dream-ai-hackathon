@@ -16,10 +16,24 @@ import { MockLessonTransport } from "./transport";
 describe("LessonResult", () => {
   it.each([
     [queuedLesson, "Queued for a render worker"],
-    [runningLesson, "Rendering your visual lesson"],
+    [runningLesson, "Generating code"],
   ])("renders progress state", (lesson, text) => {
     render(<LessonResult lesson={lesson} />);
-    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(screen.getAllByText(text).length).toBeGreaterThan(0);
+  });
+
+  it("shows the backend-reported generation stage", () => {
+    render(
+      <LessonResult
+        lesson={{ ...runningLesson, stage: "validating_code" }}
+      />,
+    );
+
+    expect(screen.getAllByText("Validating code")).toHaveLength(2);
+    expect(screen.getByText("1. Route prompt").parentElement).toHaveClass("is-complete");
+    expect(screen.getByText("2. Generate code").parentElement).toHaveClass("is-complete");
+    expect(screen.getByText("3. Validate code").parentElement).toHaveClass("is-active");
+    expect(screen.getByText("4. Render + narrate").parentElement).not.toHaveClass("is-complete");
   });
 
   it("plays the narrated result and exposes captions", () => {
@@ -71,8 +85,17 @@ describe("LessonResult", () => {
   });
 
   it("shows terminal failure without a video player", () => {
-    render(<LessonResult lesson={failedLesson} />);
+    render(
+      <LessonResult
+        lesson={{
+          ...failedLesson,
+          error: "Manim exited with code 1: Traceback (most recent call last)",
+        }}
+      />,
+    );
     expect(screen.getByText("Lesson failed")).toBeInTheDocument();
+    expect(screen.getByText("We couldn't generate this lesson. Please try again.")).toBeInTheDocument();
+    expect(screen.queryByText(/Traceback/)).not.toBeInTheDocument();
     expect(screen.queryByTestId("lesson-video")).not.toBeInTheDocument();
   });
 

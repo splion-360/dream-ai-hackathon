@@ -104,6 +104,7 @@ def test_submit_known_lesson_returns_before_render_and_can_be_polled(tmp_path: P
         assert queued["id"]
         assert queued["lesson"] == "pythagorean-theorem"
         assert queued["status"] == "queued"
+        assert queued["stage"] == "routing"
         assert queued["video_url"] is None
         assert queued["silent_video_url"] is None
         assert queued["captions_url"] is None
@@ -119,6 +120,7 @@ def test_submit_known_lesson_returns_before_render_and_can_be_polled(tmp_path: P
         ready = wait_for_status(client, queued["id"], "ready")
 
     assert ready["video_url"] == f"/lessons/{queued['id']}/video"
+    assert ready["stage"] == "ready"
     assert ready["silent_video_url"] == f"/lessons/{queued['id']}/video/silent"
     assert ready["completed_at"] is not None
     assert ready["diagnostics"]["renderer"] == "controlled-test-renderer"
@@ -144,7 +146,9 @@ def test_render_failure_reaches_terminal_failed_state() -> None:
 
     assert failed["completed_at"] is not None
     assert failed["video_url"] is None
-    assert "render failed" in failed["error"]
+    assert failed["stage"] == "failed"
+    assert failed["error"] == "We couldn't generate this lesson. Please try again."
+    assert "render failed" not in failed["error"]
 
 
 def test_render_failure_exposes_bounded_diagnostics() -> None:
@@ -170,7 +174,8 @@ def test_useful_incomplete_result_reaches_terminal_partial_state() -> None:
 
     assert partial["completed_at"] is not None
     assert partial["video_url"] is None
-    assert partial["error"].startswith("partial result")
+    assert partial["stage"] == "failed"
+    assert partial["error"] == "Some lesson assets could not be generated."
     assert partial["diagnostics"]["renderer"] == "partial-test-renderer"
 
 
@@ -384,5 +389,5 @@ def test_missing_model_credentials_reaches_terminal_failed_state() -> None:
         submitted = client.post("/lessons", json={"lesson": "generated-demo"})
         failed = wait_for_status(client, submitted.json()["id"], "failed")
 
-    assert failed["error"] == "Nebius API key is not configured"
+    assert failed["error"] == "We couldn't generate this lesson. Please try again."
     assert failed["video_url"] is None
